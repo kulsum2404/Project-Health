@@ -73,7 +73,8 @@ The frontend is a React application built with Vite and Tailwind CSS.
    ```
 
 5. **View the Application**:
-   Open your browser and navigate to `http://localhost:5173`.
+   Open your browser and navigate to `http://localhost:5174`.
+   - If port `5173` is already in use, the app will now start on `5174` instead.
 
 ---
 

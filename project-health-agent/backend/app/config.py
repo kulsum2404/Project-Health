@@ -25,7 +25,8 @@ class Settings(BaseSettings):
 
     # ── LLM Provider ──────────────────────────────────────────────────
     gemini_api_key: str = ""
-    llm_model: str = "gemini-2.5-flash"
+    groq_api_key: str = ""
+    llm_model: str = "openai/gpt-oss-120b"
     llm_max_tokens: int = 1024
 
     # ── Scheduler ─────────────────────────────────────────────────────
@@ -39,7 +40,12 @@ class Settings(BaseSettings):
     # ── App ───────────────────────────────────────────────────────────
     app_name: str = "Project Health Agent"
     debug: bool = False
-    cors_origins: list[str] = ["http://localhost:5173"]
+    cors_origins: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+    ]
 
     @property
     def upload_path(self) -> Path:

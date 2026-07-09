@@ -34,16 +34,40 @@ REQUIRED_COLUMNS = {
 
 def _find_column(df: pd.DataFrame, mapping: dict[str, str], candidates: list[str]) -> str | None:
     """Find the first matching column from mapping or DataFrame columns."""
+    
+    def is_usable(col_name: str) -> bool:
+        # Consider a column usable if it has at least 3 non-null values or >10% fill rate
+        if df.empty:
+            return True
+        fill_count = df[col_name].notna().sum()
+        return fill_count >= 3 or (fill_count / len(df)) > 0.1
+
+    mapped_but_empty = None
+
     # Check explicit mapping first
     for candidate in candidates:
         if candidate in mapping:
             mapped = mapping[candidate]
             if mapped in df.columns:
-                return mapped
-    # Fall back to direct column name matching
+                if is_usable(mapped):
+                    return mapped
+                if mapped_but_empty is None:
+                    mapped_but_empty = mapped
+
+    # Fall back to direct column name matching if mapping was empty/bad
+    for candidate in candidates:
+        if candidate in df.columns:
+            if is_usable(candidate):
+                return candidate
+
+    # Last resort: return the mapped column even if empty, or the first candidate found
+    if mapped_but_empty:
+        return mapped_but_empty
+
     for candidate in candidates:
         if candidate in df.columns:
             return candidate
+
     return None
 
 

@@ -1,5 +1,5 @@
 """
-Provider-agnostic LLM client wrapping Google's Gemini API.
+Provider-agnostic LLM client wrapping OpenAI / Groq API.
 
 Designed so the underlying model/provider can be swapped by changing the
 implementation here without touching any calling code.
@@ -8,10 +8,10 @@ implementation here without touching any calling code.
 from __future__ import annotations
 
 import logging
+import json
 from typing import Any
 
-from google import genai
-from google.genai import types
+from openai import AsyncOpenAI
 
 from app.config import get_settings
 
@@ -19,24 +19,27 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    """Thin wrapper over the Google GenAI SDK for structured LLM interactions."""
+    """Thin wrapper over the OpenAI API for structured LLM interactions."""
 
     def __init__(self, api_key: str | None = None, model: str | None = None) -> None:
         settings = get_settings()
-        self._api_key = api_key or settings.gemini_api_key
+        self._api_key = api_key or settings.groq_api_key or settings.gemini_api_key
         self._model = model or settings.llm_model
         self._max_tokens = settings.llm_max_tokens
-        self._client: genai.Client | None = None
+        self._client: AsyncOpenAI | None = None
+
+        # Determine base URL based on whether it's a Groq key
+        self._base_url = "https://api.groq.com/openai/v1" if self._api_key and self._api_key.startswith("gsk_") else None
 
     @property
-    def client(self) -> genai.Client:
+    def client(self) -> AsyncOpenAI:
         if self._client is None:
             if not self._api_key:
                 raise ValueError(
-                    "GEMINI_API_KEY is not set. "
-                    "Please set it in your .env file or pass it explicitly."
+                    "API KEY is not set. "
+                    "Please set GROQ_API_KEY or GEMINI_API_KEY in your .env file."
                 )
-            self._client = genai.Client(api_key=self._api_key)
+            self._client = AsyncOpenAI(api_key=self._api_key, base_url=self._base_url)
         return self._client
 
     async def complete(
@@ -50,16 +53,6 @@ class LLMClient:
     ) -> str:
         """
         Send a prompt to the LLM and return the text response.
-
-        Args:
-            system_prompt: System-level instruction for the model.
-            user_prompt: The user message / main content.
-            model: Override the default model.
-            max_tokens: Override the default max tokens.
-            temperature: Sampling temperature (lower = more deterministic).
-
-        Returns:
-            The model's text response.
         """
         resolved_model = model or self._model
         resolved_max = max_tokens or self._max_tokens
@@ -74,20 +67,17 @@ class LLMClient:
         logger.debug("User prompt: %s", user_prompt[:200])
 
         try:
-            # We use synchronous call for generate_content inside an async function.
-            # Ideally in a production async app we could use client.aio.models.generate_content if available,
-            # or wrap this in asyncio.to_thread if it's blocking.
-            response = self.client.models.generate_content(
+            response = await self.client.chat.completions.create(
                 model=resolved_model,
-                contents=user_prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    temperature=temperature,
-                    max_output_tokens=resolved_max,
-                )
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=temperature,
+                max_tokens=resolved_max,
             )
 
-            response_text = response.text or ""
+            response_text = response.choices[0].message.content or ""
             logger.info("LLM response: %d chars", len(response_text))
             return response_text
 
@@ -106,29 +96,33 @@ class LLMClient:
     ) -> dict[str, Any]:
         """
         Send a prompt expecting a JSON response. Parses and returns a dict.
-
-        The system prompt should instruct the model to respond with valid JSON.
         """
-        import json
-
         resolved_model = model or self._model
         resolved_max = max_tokens or self._max_tokens
 
         try:
-            response = self.client.models.generate_content(
+            # Note: Groq supports response_format={"type": "json_object"} 
+            # for select models, but it's often safer to rely on prompting for newer models.
+            # We'll use json_object for compatibility.
+            
+            # Ensure "JSON" is mentioned in the system prompt as required by OpenAI API spec for json_object
+            if "json" not in system_prompt.lower():
+                system_prompt += "\n\nYou must respond with valid JSON."
+                
+            response = await self.client.chat.completions.create(
                 model=resolved_model,
-                contents=user_prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    temperature=temperature,
-                    max_output_tokens=resolved_max,
-                    response_mime_type="application/json",
-                )
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=temperature,
+                max_tokens=resolved_max,
+                response_format={"type": "json_object"},
             )
             
-            response_text = response.text or ""
+            response_text = response.choices[0].message.content or ""
             
-            # Strip markdown code fences if present (some models still inject them even with application/json)
+            # Strip markdown code fences if present
             cleaned = response_text.strip()
             if cleaned.startswith("```"):
                 lines = cleaned.split("\n")

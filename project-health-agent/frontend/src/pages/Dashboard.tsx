@@ -8,6 +8,8 @@ import { MonthlyReportButton } from "@/components/MonthlyReportButton"
 import type { Variants } from "framer-motion"
 import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
+import { PortfolioTrendChart } from "@/components/PortfolioTrendChart"
+import type { Snapshot } from "@/api/client"
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -34,6 +36,7 @@ const itemVariants: Variants = {
 
 export function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([])
+  const [history, setHistory] = useState<Record<number, Snapshot[]>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -41,8 +44,12 @@ export function Dashboard() {
     setIsLoading(true)
     setError(null)
     try {
-      const data = await api.getProjects()
-      setProjects(data)
+      const [projData, histData] = await Promise.all([
+        api.getProjects(),
+        api.getPortfolioHistory()
+      ])
+      setProjects(projData)
+      setHistory(histData)
     } catch (err: any) {
       setError(err.message || "Failed to load projects")
     } finally {
@@ -111,6 +118,12 @@ export function Dashboard() {
         <StatCard title="Amber Status" value={amber} color="text-rag-amber" bg="bg-rag-amber/10" border="border-rag-amber/20" glow="shadow-[0_0_15px_rgba(245,158,11,0.1)]" />
         <StatCard title="Red Status" value={red} color="text-rag-red" bg="bg-rag-red/10" border="border-rag-red/20" glow="shadow-[0_0_15px_rgba(244,63,94,0.1)]" />
       </motion.div>
+
+      {!isLoading && !error && projects.length > 0 && (
+        <motion.div variants={itemVariants} initial="hidden" animate="visible">
+          <PortfolioTrendChart history={history} projects={projects} />
+        </motion.div>
+      )}
 
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

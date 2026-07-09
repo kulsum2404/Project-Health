@@ -25,6 +25,10 @@ export interface Snapshot {
   signals_used: string[]
   signals_skipped: string[]
   reasoning: string
+  signal_summaries: Record<string, string>
+  source_file: string
+  sheet_count: number
+  total_tasks: number
 }
 
 export interface Project {
@@ -151,6 +155,10 @@ class ApiClient {
 
   getProjectHistory(id: number) {
     return this.request<Snapshot[]>(`/projects/${id}/history`)
+  }
+
+  getPortfolioHistory() {
+    return this.request<Record<number, Snapshot[]>>(`/projects/all/history`)
   }
 
   getSignalExplanation(projectId: number, signalName: string) {

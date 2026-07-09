@@ -11,6 +11,8 @@ import { ReasoningPanel } from "@/components/ReasoningPanel"
 import { TrendChart } from "@/components/TrendChart"
 import type { Variants } from "framer-motion"
 import { motion, AnimatePresence } from "framer-motion"
+import { SchedulePieChart } from "@/components/SchedulePieChart"
+import { SentimentBarChart } from "@/components/SentimentBarChart"
 
 // Animation Variants
 const staggerContainer: Variants = {
@@ -367,65 +369,42 @@ export function ProjectDetail() {
       {report && (
         <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-8">
           
-          {/* Top Overview Strip */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <motion.div variants={fadeUp}>
-              <Card className="md:col-span-1 border-white/10 shadow-2xl bg-card/60 backdrop-blur-2xl relative overflow-hidden group h-full">
-                {/* Glow behind the score */}
-                <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 blur-[80px] rounded-full z-0 transition-colors duration-1000
-                  ${report.snapshot.rag_status === 'green' ? 'bg-rag-green/30' : 
-                    report.snapshot.rag_status === 'amber' ? 'bg-rag-amber/30' : 
-                    'bg-rag-red/30'}`} 
-                />
-                <CardContent className="p-8 flex flex-col items-center justify-center text-center h-full gap-6 relative z-10">
-                  <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest">System Status</p>
-                  
-                  <motion.div 
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", bounce: 0.5, delay: 0.2 }}
-                    className={`w-32 h-32 rounded-full flex items-center justify-center shadow-[inset_0_0_20px_rgba(0,0,0,0.5)]
-                    ${report.snapshot.rag_status === 'green' ? 'bg-rag-green/20 text-rag-green border-2 border-rag-green/50 shadow-[0_0_30px_rgba(16,185,129,0.3)]' : 
-                      report.snapshot.rag_status === 'amber' ? 'bg-rag-amber/20 text-rag-amber border-2 border-rag-amber/50 shadow-[0_0_30px_rgba(245,158,11,0.3)]' : 
-                      'bg-rag-red/20 text-rag-red border-2 border-rag-red/50 shadow-[0_0_30px_rgba(244,63,94,0.3)]'}`}
-                  >
-                    <span className="text-4xl font-black uppercase tracking-wider">{report.snapshot.rag_status}</span>
-                  </motion.div>
-                  
-                  <div>
-                    <div className="text-6xl font-black tabular-nums drop-shadow-md">
-                      {report.snapshot.weighted_score.toFixed(0)}<span className="text-2xl text-muted-foreground/50 font-normal">/100</span>
-                    </div>
-                    <p className="text-sm text-primary mt-2 font-bold uppercase tracking-wider">Weighted Score</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </motion.div>
-            
-            <motion.div variants={fadeUp} className="md:col-span-2">
-              <div className="h-full bg-card/60 backdrop-blur-2xl rounded-3xl border border-white/10 shadow-2xl p-2">
-                <TrendChart history={history} />
-              </div>
-            </motion.div>
-          </div>
-
-          {/* AI Reasoning */}
+          {/* ── Weekly Health Report (primary view) ── */}
           <motion.div variants={fadeUp}>
-            <ReasoningPanel 
-              reasoning={report.snapshot.reasoning} 
+            <ReasoningPanel
+              reasoning={report.snapshot.reasoning}
               confidence={report.snapshot.confidence}
               signalsUsed={report.snapshot.signals_used}
               signalsSkipped={report.snapshot.signals_skipped}
+              signalDetails={report.snapshot.signal_details}
+              signalSummaries={report.snapshot.signal_summaries || {}}
+              weightedScore={report.snapshot.weighted_score}
+              ragStatus={report.snapshot.rag_status}
+              projectName={project?.name || `Project #${projectId}`}
+              managerName={project?.manager_name || "Unassigned"}
+              createdAt={report.snapshot.created_at}
+              sourceFile={report.snapshot.source_file || ""}
+              sheetCount={report.snapshot.sheet_count || 0}
+              totalTasks={report.snapshot.total_tasks || 0}
             />
           </motion.div>
 
-          {/* Signals Breakdown */}
+          {/* ── Trend Chart ── */}
+          {history.length > 0 && (
+            <motion.div variants={fadeUp}>
+              <div className="bg-card/60 backdrop-blur-2xl rounded-3xl border border-white/10 shadow-2xl p-2">
+                <TrendChart history={history} />
+              </div>
+            </motion.div>
+          )}
+
+          {/* ── Signal Detail Cards ── */}
           <motion.div variants={fadeUp}>
             <h3 className="text-2xl font-black mt-12 mb-6 tracking-tight flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-primary">
                 <Activity className="w-5 h-5" />
               </div>
-              Signal Matrices
+              Signal Details
             </h3>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <SignalCard name="Schedule" signalKey="schedule" projectId={projectId} icon={<Calendar className="w-5 h-5" />} data={report.snapshot.signal_details.schedule} />
@@ -435,6 +414,22 @@ export function ProjectDetail() {
               <SignalCard name="Sentiment" signalKey="sentiment" projectId={projectId} icon={<MessageSquare className="w-5 h-5" />} data={report.snapshot.signal_details.sentiment} />
             </div>
           </motion.div>
+
+          {/* ── Deep Dive Analytics Charts ── */}
+          {(report.snapshot.signal_details.schedule?.available || report.snapshot.signal_details.sentiment?.available) && (
+            <motion.div variants={fadeUp}>
+              <h3 className="text-2xl font-black mt-12 mb-6 tracking-tight flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-teal-500/20 flex items-center justify-center text-teal-400">
+                  <Activity className="w-5 h-5" />
+                </div>
+                Deep Dive Analytics
+              </h3>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <SchedulePieChart data={report.snapshot.signal_details.schedule} />
+                <SentimentBarChart data={report.snapshot.signal_details.sentiment} />
+              </div>
+            </motion.div>
+          )}
 
           {/* Blockers Table */}
           {report.blockers.length > 0 && (

@@ -98,6 +98,11 @@ class WeeklySnapshot(SQLModel, table=True):
     # LLM-generated reasoning
     reasoning: str = ""
 
+    # Per-signal one-liner summaries (generated alongside reasoning)
+    signal_summaries: dict[str, str] = SQLField(
+        default_factory=dict, sa_column=Column(JSON)
+    )
+
     # Relationship
     project: Optional["Project"] = Relationship(back_populates="snapshots")
 
@@ -230,6 +235,10 @@ class SnapshotResponse(BaseModel):
     signals_used: list[str]
     signals_skipped: list[str]
     reasoning: str
+    signal_summaries: dict[str, str] = {}
+    source_file: str = ""
+    sheet_count: int = 0
+    total_tasks: int = 0
 
 
 class ReportResponse(BaseModel):

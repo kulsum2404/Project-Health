@@ -5,10 +5,12 @@ Report endpoints — latest RAG report and historical snapshots.
 from __future__ import annotations
 
 import logging
+import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
+from app.ingestion.loader import load_xlsx, get_dataframe_from_project_data
 from app.main import get_session
 from app.models.models import (
     Blocker,
@@ -62,6 +64,18 @@ async def get_latest_report(
         for b in blockers
     ]
 
+    # Load source metadata
+    try:
+        project_data = load_xlsx(project.file_path)
+        df = get_dataframe_from_project_data(project_data)
+        source_file = os.path.basename(project.file_path) if project.file_path else ""
+        sheet_count = len(project_data.sheets)
+        total_tasks = len(df)
+    except Exception:
+        source_file = ""
+        sheet_count = 0
+        total_tasks = 0
+
     snapshot_response = SnapshotResponse(
         id=latest.id,  # type: ignore
         project_id=latest.project_id,
@@ -78,6 +92,10 @@ async def get_latest_report(
         signals_used=latest.signals_used,
         signals_skipped=latest.signals_skipped,
         reasoning=latest.reasoning,
+        signal_summaries=latest.signal_summaries,
+        source_file=source_file,
+        sheet_count=sheet_count,
+        total_tasks=total_tasks,
     )
 
     return ReportResponse(
@@ -123,6 +141,7 @@ async def get_project_history(
             signals_used=s.signals_used,
             signals_skipped=s.signals_skipped,
             reasoning=s.reasoning,
+            signal_summaries=s.signal_summaries,
         )
         for s in snapshots
     ]

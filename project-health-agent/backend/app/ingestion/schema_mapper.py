@@ -140,7 +140,20 @@ async def map_schema_with_llm(
         for note in notes:
             log.append({"action": "note", "message": note, "method": "llm"})
 
-        logger.info("LLM schema mapping: %d fields mapped, %d unmapped columns", len(validated_mapping), len(unmapped))
+        logger.info("LLM schema mapping: %d fields mapped", len(validated_mapping))
+        
+        # If the LLM missed any critical fields, fill the gaps with the heuristic!
+        heuristic_mapping, heu_log = map_schema_heuristic(columns)
+        for canonical, actual in heuristic_mapping.items():
+            if canonical not in validated_mapping and actual not in validated_mapping.values():
+                validated_mapping[canonical] = actual
+                log.append({
+                    "action": "mapped",
+                    "canonical": canonical,
+                    "actual": actual,
+                    "method": "heuristic_fallback"
+                })
+
         return validated_mapping, log
 
     except Exception as e:
@@ -167,24 +180,24 @@ def map_schema_heuristic(
 
     # Common aliases for canonical fields
     ALIASES: dict[str, list[str]] = {
-        "task_name": ["task", "task_name", "task name", "activity", "work_item", "deliverable", "name", "item"],
+        "task_name": ["task", "task_name", "task name", "activity", "work_item", "deliverable", "name", "item", "title"],
         "planned_start": ["planned_start", "baseline_start", "start_date", "start date", "plan_start", "start", "baseline_start2"],
-        "planned_end": ["planned_end", "planned_finish", "baseline_end", "due_date", "end_date", "end date", "plan_end", "deadline", "finish", "baseline_finish", "baseline_finish2"],
-        "actual_start": ["actual_start", "real_start"],
-        "actual_end": ["actual_end", "actual_finish", "completed_date", "finish_date", "completion_date"],
-        "status": ["status", "task_status", "state", "progress_status"],
+        "planned_end": ["planned_end", "planned_finish", "baseline_end", "due_date", "end_date", "end date", "plan_end", "deadline", "finish", "end", "baseline_finish", "baseline_finish2", "target_date"],
+        "actual_start": ["actual_start", "real_start", "started", "act_start"],
+        "actual_end": ["actual_end", "actual_finish", "completed_date", "finish_date", "completion_date", "closed_date", "completed", "done_date"],
+        "status": ["status", "task_status", "state", "progress_status", "current_status"],
         "is_critical": ["critical", "is_critical", "critical_path", "on_critical_path", "critical_?", "critical ?"],
-        "pct_complete": ["pct_complete", "percent_complete", "%_complete", "completion", "progress", "%_complete", "% complete"],
-        "planned_budget": ["budget", "planned_budget", "baseline_cost", "planned_cost", "estimated_cost", "total_float", "total float"],
-        "actual_cost": ["actual_cost", "actual_spend", "spend", "cost_to_date", "incurred_cost", "cost"],
-        "earned_value": ["earned_value", "ev"],
-        "planned_value": ["planned_value", "pv"],
-        "is_milestone": ["is_milestone", "milestone_flag", "milestone", "phase/milestone"],
-        "blocker": ["blocker", "issue", "risk", "impediment", "problem", "blocker_description", "on_hold?", "on hold?", "at_risk?", "at risk?"],
-        "severity": ["severity", "priority", "impact", "level"],
-        "created_date": ["created_date", "identified_date", "date_raised", "raised_date"],
-        "resolved_date": ["resolved_date", "resolution_date", "closed_date", "fixed_date"],
-        "notes": ["notes", "comments", "remarks", "status_notes", "status_comment", "status comment", "update", "observation"],
+        "pct_complete": ["pct_complete", "percent_complete", "%_complete", "completion", "progress", "% complete", "complete"],
+        "planned_budget": ["budget", "planned_budget", "baseline_cost", "planned_cost", "estimated_cost", "cost", "total_cost", "amount"],
+        "actual_cost": ["actual_cost", "actual_spend", "spend", "cost_to_date", "incurred_cost", "actuals"],
+        "earned_value": ["earned_value", "ev", "bcwp"],
+        "planned_value": ["planned_value", "pv", "bcws"],
+        "is_milestone": ["is_milestone", "milestone_flag", "milestone", "phase/milestone", "milestone_?"],
+        "blocker": ["blocker", "issue", "risk", "impediment", "problem", "blocker_description", "on_hold?", "on hold?", "at_risk?", "at risk?", "description"],
+        "severity": ["severity", "priority", "impact", "level", "urgency"],
+        "created_date": ["created_date", "identified_date", "date_raised", "raised_date", "opened"],
+        "resolved_date": ["resolved_date", "resolution_date", "closed_date", "fixed_date", "closed"],
+        "notes": ["notes", "comments", "remarks", "status_notes", "status_comment", "status comment", "update", "observation", "description", "details"],
     }
 
     mapping: dict[str, str] = {}

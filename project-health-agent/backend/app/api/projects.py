@@ -27,7 +27,7 @@ from app.models.models import (
     WeeklySnapshot,
 )
 from app.rag.classifier import classify_rag
-from app.rag.reasoning import generate_reasoning, generate_signal_explanation
+from app.rag.reasoning import generate_reasoning_and_summaries, generate_signal_explanation
 from app.signals.blockers import compute_blocker_signal
 from app.signals.budget import compute_budget_signal
 from app.signals.milestones import compute_milestone_signal
@@ -168,6 +168,46 @@ async def list_projects(
     return responses
 
 
+@router.get("/projects/all/history", response_model=dict[int, list[SnapshotResponse]])
+async def get_all_projects_history(
+    session: Session = Depends(get_session),
+) -> dict[int, list[SnapshotResponse]]:
+    """Get the snapshot history for all active projects, grouped by project_id."""
+    projects = session.exec(select(Project).where(Project.is_active == True)).all()  # noqa: E712
+    
+    result = {}
+    for project in projects:
+        snapshots = session.exec(
+            select(WeeklySnapshot)
+            .where(WeeklySnapshot.project_id == project.id)
+            .order_by(WeeklySnapshot.created_at.asc())  # type: ignore
+        ).all()
+        
+        result[project.id] = [
+            SnapshotResponse(
+                id=s.id,  # type: ignore
+                project_id=s.project_id,
+                created_at=s.created_at,
+                rag_status=s.rag_status,
+                weighted_score=s.weighted_score,
+                confidence=s.confidence,
+                schedule_score=s.schedule_score,
+                budget_score=s.budget_score,
+                milestone_score=s.milestone_score,
+                blocker_score=s.blocker_score,
+                sentiment_score=s.sentiment_score,
+                signal_details=s.signal_details,
+                signals_used=s.signals_used,
+                signals_skipped=s.signals_skipped,
+                reasoning=s.reasoning,
+                signal_summaries=s.signal_summaries,
+            )
+            for s in snapshots
+        ]
+        
+    return result
+
+
 @router.get("/projects/{project_id}", response_model=ProjectResponse)
 async def get_project(
     project_id: int,
@@ -275,6 +315,12 @@ async def analyze_project(
     mapping = project.schema_mapping
     now = datetime.utcnow()
 
+    # ── Source metadata for the report footer ──────────────────────────
+    import os
+    source_file = os.path.basename(project.file_path) if project.file_path else ""
+    sheet_count = len(project_data.sheets)
+    total_tasks = len(df)
+
     # ── Run all signal extractors ──────────────────────────────────────
     schedule_signal = compute_schedule_signal(df, mapping, reference_date=now)
     budget_signal = compute_budget_signal(df, mapping)
@@ -289,12 +335,15 @@ async def analyze_project(
     # ── Classify RAG ───────────────────────────────────────────────────
     rag_result = classify_rag(signals)
 
-    # ── Generate LLM reasoning ────────────────────────────────────────
+    # ── Generate LLM reasoning + per-signal summaries (single call) ───
     try:
-        reasoning = await generate_reasoning(rag_result, project.name)
+        reasoning, signal_summaries = await generate_reasoning_and_summaries(
+            rag_result, project.name
+        )
     except Exception as e:
         logger.error("Reasoning generation failed: %s", e)
         reasoning = f"Reasoning unavailable: {e}"
+        signal_summaries = {}
 
     # ── Persist snapshot ───────────────────────────────────────────────
     signal_details: dict[str, Any] = {}
@@ -321,6 +370,7 @@ async def analyze_project(
         signals_used=rag_result.signals_used,
         signals_skipped=rag_result.signals_skipped,
         reasoning=reasoning,
+        signal_summaries=signal_summaries,
     )
 
     session.add(snapshot)
@@ -356,6 +406,10 @@ async def analyze_project(
         signals_used=snapshot.signals_used,
         signals_skipped=snapshot.signals_skipped,
         reasoning=snapshot.reasoning,
+        signal_summaries=snapshot.signal_summaries,
+        source_file=source_file,
+        sheet_count=sheet_count,
+        total_tasks=total_tasks,
     )
 
 

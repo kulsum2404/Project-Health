@@ -16,7 +16,9 @@ from app.models.models import RagResult
 
 logger = logging.getLogger(__name__)
 
-REASONING_SYSTEM_PROMPT = """You are a senior project health analyst writing a comprehensive executive analysis for a project's current health status.
+# ── New concise prompt matching the reference report style ────────────────
+
+REASONING_SYSTEM_PROMPT = """You are a senior project health analyst writing a concise weekly health report.
 
 You will receive a JSON object containing:
 - The RAG status (red/amber/green) determined by our scoring system
@@ -25,30 +27,38 @@ You will receive a JSON object containing:
 - Any override reasons that forced the status
 - The weights used for each signal
 
-Your job is to write a DETAILED, multi-paragraph analysis that covers:
+Your job is to return a valid JSON object with two fields:
 
-**Paragraph 1 — Executive Summary**: State the overall health status, the weighted score, and the primary factors driving it. Mention if any override conditions were triggered.
+{
+  "executive_summary": "...",
+  "signal_summaries": {
+    "schedule": "...",
+    "budget": "...",
+    "milestones": "...",
+    "blockers": "...",
+    "sentiment": "..."
+  }
+}
 
-**Paragraph 2 — Schedule & Milestones Deep Dive**: Analyze the schedule and milestone signals together. Cite specific numbers: how many tasks are overdue, what percentage, any critical path delays, milestone on-time rates. Explain what this means for project delivery.
+RULES FOR executive_summary:
+- Provide a highly detailed, comprehensive executive summary.
+- Lead with the most critical findings.
+- Use "quoted phrases" to highlight key data from the source file (e.g., "Schedule Health: Green" or "At Risk: High"). These will be rendered as colored highlights in the UI.
+- Cite specific numbers: tasks overdue, days behind, milestones missed, unresolved blockers.
+- If a signal was excluded (e.g., no budget data), mention it.
+- Tone: professional, analytical, and highly detailed.
 
-**Paragraph 3 — Budget & Resource Analysis**: Discuss the CPI, burn rate, earned value vs planned value. Explain whether the project is tracking to budget or heading for a cost overrun. If budget data was limited, note that.
+RULES FOR signal_summaries:
+- Provide a detailed summary for each individual signal.
+- For each AVAILABLE signal, write a comprehensive explanation of the key findings.
+- Cite specific numbers extensively (e.g., "13 critical-path tasks are Not Started and already 41–63 days behind baseline").
+- For UNAVAILABLE/SKIPPED signals, write "Signal excluded — [reason]." (e.g., "Signal excluded — no cost columns detected in source file.")
+- Explain the precise impact on the project's overall health.
 
-**Paragraph 4 — Risk & Blocker Assessment**: Analyze unresolved blockers — their count, severity distribution, and age. Highlight any critical blockers and their potential impact. If there are no blockers, note that as a positive signal.
-
-**Paragraph 5 — Stakeholder Sentiment**: Discuss the sentiment analysis results — how many entries were classified, the distribution of positive/neutral/negative, and what this indicates about team morale and stakeholder confidence.
-
-**Paragraph 6 — Score Contribution Breakdown**: Explain how each signal's score contributes to the final weighted score. For example: "Schedule (score 85 × weight 30% = 25.5 points), Budget (score 100 × weight 20% = 20.0 points)..." Show the math clearly.
-
-**Paragraph 7 — Key Risks & Recommendations**: Based on the data, identify the top 2-3 risks and provide actionable recommendations for the project manager.
-
-IMPORTANT RULES:
-- ONLY reference data from the JSON provided. Do NOT invent or assume any data not present.
-- Be factual and specific — cite actual numbers from the signals.
-- Do not speculate about causes beyond what the data shows.
-- Keep the tone professional — this is for executive stakeholders.
-- If signals were skipped, mention this impacts confidence.
-- Use clear paragraph breaks between sections.
-- Each paragraph should be substantive (3-5 sentences minimum)."""
+IMPORTANT:
+- ONLY reference data from the JSON provided. Do NOT invent data.
+- Be factual — cite actual numbers from the signal details.
+- The response MUST be valid JSON. No markdown code fences."""
 
 
 SIGNAL_EXPLANATION_SYSTEM_PROMPT = """You are a project health analyst explaining a specific scoring factor to a project manager.
@@ -59,34 +69,169 @@ You will receive:
 - The signal's weight in the overall scoring model
 - The overall project weighted score and RAG status
 
-Write a detailed explanation (4-6 sentences) that covers:
-1. WHY this project received this specific score — what exact data points drove it up or down. Do NOT explain what the signal measures in general; the user already knows that.
-2. The specific numbers: cite exact counts, percentages, and values from the details (e.g., "44 of 383 milestones are late, bringing your on-time rate to 89%")
-3. Show the score math clearly (e.g., "Your score of 89 comes from 89% on-time rate with no SPI adjustment")
-4. How this signal's score contributes to the overall weighted score: score × weight = X contribution points out of the total Y
-5. Whether this signal is dragging the overall project health DOWN or pushing it UP, and by how many points relative to a perfect 100
-6. One specific, actionable recommendation to improve this score
+Write a concise explanation (2-3 sentences) that covers:
+1. The key data points driving this specific score — cite exact numbers
+2. Whether this signal is helping or hurting the overall project health
+3. One specific, actionable recommendation
 
 IMPORTANT RULES:
-- Do NOT start with a generic definition of the signal. Jump straight into the project-specific analysis.
+- Do NOT start with a generic definition of the signal. Jump straight into the analysis.
 - ONLY use data from the JSON provided. Never invent data.
-- Be specific — cite exact numbers, percentages, and counts from the details.
-- Show the math: signal_score × weight = contribution to overall score.
-- Keep the tone direct and analytical — speak to the project manager."""
+- Be specific — cite exact numbers, percentages, and counts.
+- Keep it punchy and direct — speak to the project manager."""
 
 
 async def generate_reasoning(rag_result: RagResult, project_name: str) -> str:
     """
-    Generate a comprehensive plain-English analysis for a RAG classification.
+    Generate a concise structured analysis for a RAG classification.
 
-    Args:
-        rag_result: The deterministic classification result with all signal data.
-        project_name: The project's name for context.
-
-    Returns:
-        A multi-paragraph analysis string.
+    Returns the executive_summary as a string (the signal_summaries
+    are returned separately via generate_signal_summaries).
     """
-    # Build the structured input for the LLM
+    input_json = _build_reasoning_input(rag_result, project_name)
+
+    user_prompt = (
+        f"Generate a concise health analysis for the following project data:\n\n"
+        f"{json.dumps(input_json, indent=2)}"
+    )
+
+    try:
+        llm = get_llm_client()
+        raw = await llm.complete_json(
+            system_prompt=REASONING_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            temperature=0.3,
+            max_tokens=2048,
+        )
+
+        executive_summary = raw.get("executive_summary", "")
+
+        logger.info("Generated reasoning for %s: %d chars", project_name, len(executive_summary))
+        return executive_summary
+
+    except Exception as e:
+        logger.error("Failed to generate reasoning for %s: %s", project_name, e)
+        return _fallback_reasoning(rag_result, project_name)
+
+
+async def generate_signal_summaries(rag_result: RagResult, project_name: str) -> dict[str, str]:
+    """
+    Generate per-signal one-liner summaries.
+
+    Returns a dict like {"schedule": "...", "budget": "...", ...}.
+    """
+    input_json = _build_reasoning_input(rag_result, project_name)
+
+    user_prompt = (
+        f"Generate a concise health analysis for the following project data:\n\n"
+        f"{json.dumps(input_json, indent=2)}"
+    )
+
+    try:
+        llm = get_llm_client()
+        raw = await llm.complete_json(
+            system_prompt=REASONING_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            temperature=0.3,
+            max_tokens=2048,
+        )
+
+        summaries = raw.get("signal_summaries", {})
+        logger.info("Generated signal summaries for %s: %s", project_name, list(summaries.keys()))
+        return summaries
+
+    except Exception as e:
+        logger.error("Failed to generate signal summaries for %s: %s", project_name, e)
+        return _fallback_signal_summaries(rag_result)
+
+
+async def generate_reasoning_and_summaries(
+    rag_result: RagResult, project_name: str
+) -> tuple[str, dict[str, str]]:
+    """
+    Generate both the executive summary and per-signal summaries in a single LLM call.
+
+    Returns (executive_summary, signal_summaries_dict).
+    """
+    input_json = _build_reasoning_input(rag_result, project_name)
+
+    user_prompt = (
+        f"Generate a concise health analysis for the following project data:\n\n"
+        f"{json.dumps(input_json, indent=2)}"
+    )
+
+    try:
+        llm = get_llm_client()
+        raw = await llm.complete_json(
+            system_prompt=REASONING_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            temperature=0.3,
+            max_tokens=2048,
+        )
+
+        executive_summary = raw.get("executive_summary", "")
+        signal_summaries = raw.get("signal_summaries", {})
+
+        logger.info(
+            "Generated reasoning+summaries for %s: summary=%d chars, signals=%s",
+            project_name, len(executive_summary), list(signal_summaries.keys()),
+        )
+        return executive_summary, signal_summaries
+
+    except Exception as e:
+        logger.error("Failed to generate reasoning for %s: %s", project_name, e)
+        return (
+            _fallback_reasoning(rag_result, project_name),
+            _fallback_signal_summaries(rag_result),
+        )
+
+
+async def generate_signal_explanation(
+    signal_name: str,
+    signal_data: dict,
+    overall_score: float,
+    rag_status: str,
+    confidence: float,
+) -> str:
+    """
+    Generate a targeted LLM explanation for a single signal.
+    """
+    input_json = {
+        "signal_name": signal_name,
+        "signal_score": signal_data.get("score", 0),
+        "signal_available": signal_data.get("available", False),
+        "signal_details": signal_data.get("details", {}),
+        "signal_reason": signal_data.get("reason", ""),
+        "overall_weighted_score": overall_score,
+        "rag_status": rag_status,
+        "confidence": confidence,
+    }
+
+    user_prompt = (
+        f"Explain the '{signal_name}' signal score for this project:\n\n"
+        f"{json.dumps(input_json, indent=2)}"
+    )
+
+    try:
+        llm = get_llm_client()
+        explanation = await llm.complete(
+            system_prompt=SIGNAL_EXPLANATION_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            temperature=0.3,
+            max_tokens=512,
+        )
+        return explanation.strip()
+
+    except Exception as e:
+        logger.error("Failed to generate signal explanation for %s: %s", signal_name, e)
+        return _fallback_signal_explanation(signal_name, signal_data, overall_score)
+
+
+# ── Private helpers ───────────────────────────────────────────────────────
+
+
+def _build_reasoning_input(rag_result: RagResult, project_name: str) -> dict:
+    """Build the structured JSON input sent to the LLM."""
     signal_data = {}
     for signal in rag_result.signals:
         signal_data[signal.name] = {
@@ -112,7 +257,7 @@ async def generate_reasoning(rag_result: RagResult, project_name: str) -> str:
                 "contribution_points": round(contribution, 1),
             }
 
-    input_json = {
+    return {
         "project_name": project_name,
         "rag_status": rag_result.status.value,
         "weighted_score": rag_result.weighted_score,
@@ -129,97 +274,19 @@ async def generate_reasoning(rag_result: RagResult, project_name: str) -> str:
         },
     }
 
-    user_prompt = (
-        f"Generate a comprehensive health analysis for the following project data:\n\n"
-        f"{json.dumps(input_json, indent=2)}"
-    )
-
-    try:
-        llm = get_llm_client()
-        reasoning = await llm.complete(
-            system_prompt=REASONING_SYSTEM_PROMPT,
-            user_prompt=user_prompt,
-            temperature=0.3,
-            max_tokens=2048,
-        )
-
-        # Clean up any leading/trailing whitespace
-        reasoning = reasoning.strip()
-        logger.info("Generated reasoning for %s: %d chars", project_name, len(reasoning))
-        return reasoning
-
-    except Exception as e:
-        logger.error("Failed to generate reasoning for %s: %s", project_name, e)
-        # Fall back to a deterministic summary
-        return _fallback_reasoning(rag_result, project_name)
-
-
-async def generate_signal_explanation(
-    signal_name: str,
-    signal_data: dict,
-    overall_score: float,
-    rag_status: str,
-    confidence: float,
-) -> str:
-    """
-    Generate a targeted LLM explanation for a single signal.
-
-    Args:
-        signal_name: The signal identifier (schedule, budget, etc.)
-        signal_data: The signal's score, details, reason, and weight info.
-        overall_score: The overall weighted project score.
-        rag_status: The overall RAG status.
-        confidence: The data confidence level.
-
-    Returns:
-        A detailed explanation string for this signal.
-    """
-    input_json = {
-        "signal_name": signal_name,
-        "signal_score": signal_data.get("score", 0),
-        "signal_available": signal_data.get("available", False),
-        "signal_details": signal_data.get("details", {}),
-        "signal_reason": signal_data.get("reason", ""),
-        "overall_weighted_score": overall_score,
-        "rag_status": rag_status,
-        "confidence": confidence,
-    }
-
-    user_prompt = (
-        f"Explain the '{signal_name}' signal score for this project:\n\n"
-        f"{json.dumps(input_json, indent=2)}"
-    )
-
-    try:
-        llm = get_llm_client()
-        explanation = await llm.complete(
-            system_prompt=SIGNAL_EXPLANATION_SYSTEM_PROMPT,
-            user_prompt=user_prompt,
-            temperature=0.3,
-            max_tokens=1024,
-        )
-        return explanation.strip()
-
-    except Exception as e:
-        logger.error("Failed to generate signal explanation for %s: %s", signal_name, e)
-        # Fall back to a deterministic explanation
-        return _fallback_signal_explanation(signal_name, signal_data, overall_score)
-
 
 def _fallback_reasoning(rag_result: RagResult, project_name: str) -> str:
-    """Generate a comprehensive deterministic reasoning when LLM is unavailable."""
+    """Generate a concise deterministic reasoning when LLM is unavailable."""
     parts = [
         f"Project '{project_name}' is rated {rag_result.status.value.upper()} "
         f"with a weighted score of {rag_result.weighted_score}/100 "
         f"(confidence: {rag_result.confidence:.0%})."
     ]
 
-    # Calculate weight contributions
     total_available_weight = sum(
         s.weight for s in rag_result.signals if s.available
     )
 
-    # Add detailed signal summaries
     for signal in rag_result.signals:
         if signal.available:
             if total_available_weight > 0:
@@ -243,6 +310,17 @@ def _fallback_reasoning(rag_result: RagResult, project_name: str) -> str:
         parts.append(f"Status overrides: {'; '.join(rag_result.override_reasons)}.")
 
     return " ".join(parts)
+
+
+def _fallback_signal_summaries(rag_result: RagResult) -> dict[str, str]:
+    """Generate deterministic per-signal summaries when LLM is unavailable."""
+    summaries = {}
+    for signal in rag_result.signals:
+        if signal.available:
+            summaries[signal.name] = signal.reason
+        else:
+            summaries[signal.name] = f"Signal excluded — {signal.reason}"
+    return summaries
 
 
 def _fallback_signal_explanation(
