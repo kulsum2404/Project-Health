@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react"
-import { ChevronDown, Bot, FileText, CheckCircle2, AlertCircle, Info, Ban } from "lucide-react"
+import { ChevronDown, Bot, FileText, CheckCircle2, AlertCircle, Info, Ban, ThumbsUp, ThumbsDown } from "lucide-react"
 import { Card, CardContent } from "./ui/card"
 import { Badge } from "./ui/badge"
 import { motion, AnimatePresence } from "framer-motion"
+import { api } from "@/api/client"
 
 interface SignalDetailData {
   score: number
@@ -26,6 +27,9 @@ interface ReasoningPanelProps {
   sourceFile: string
   sheetCount: number
   totalTasks: number
+  projectId: number
+  snapshotId: number
+  feedbackScore: number
 }
 
 // Signal display config
@@ -140,8 +144,26 @@ export function ReasoningPanel({
   sourceFile,
   sheetCount,
   totalTasks,
+  projectId,
+  snapshotId,
+  feedbackScore,
 }: ReasoningPanelProps) {
   const [expandedSignal, setExpandedSignal] = useState<string | null>(null)
+  const [currentFeedback, setCurrentFeedback] = useState(feedbackScore)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handleFeedback = async (score: number) => {
+    if (score === currentFeedback || isSubmitting) return
+    setIsSubmitting(true)
+    try {
+      await api.submitFeedback(projectId, snapshotId, score)
+      setCurrentFeedback(score)
+    } catch (err) {
+      console.error("Failed to submit feedback", err)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   // Calculate redistributed weights
   const totalAvailableWeight = SIGNAL_ORDER.reduce((sum, key) => {
@@ -232,7 +254,7 @@ export function ReasoningPanel({
         </div>
 
         {/* ── EXECUTIVE SUMMARY ── */}
-        <div className="bg-black/30 rounded-2xl p-6 border border-white/5 shadow-inner">
+        <div className="bg-black/30 rounded-2xl p-6 border border-white/5 shadow-inner group">
           <div className="flex items-start gap-3">
             <div className="mt-1 text-muted-foreground/40 shrink-0">
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -240,9 +262,29 @@ export function ReasoningPanel({
                 <path d="M15 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z" />
               </svg>
             </div>
-            <div className="text-sm text-foreground/90 leading-relaxed font-medium">
+            <div className="text-sm text-foreground/90 leading-relaxed font-medium flex-1">
               <TypewriterText text={reasoning.replace(/\*\*/g, "")} />
             </div>
+          </div>
+          
+          <div className="flex items-center justify-end gap-2 mt-4 pt-4 border-t border-white/5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="text-xs text-muted-foreground mr-2 font-medium">Was this analysis accurate?</span>
+            <button 
+              onClick={() => handleFeedback(1)}
+              disabled={isSubmitting}
+              className={`p-1.5 rounded-md transition-colors border ${currentFeedback === 1 ? 'text-green-500 bg-green-500/10 border-green-500/30' : 'text-muted-foreground hover:bg-white/10 border-transparent hover:border-white/10'}`}
+              title="Yes, accurate"
+            >
+              <ThumbsUp className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={() => handleFeedback(-1)}
+              disabled={isSubmitting}
+              className={`p-1.5 rounded-md transition-colors border ${currentFeedback === -1 ? 'text-rose-500 bg-rose-500/10 border-rose-500/30' : 'text-muted-foreground hover:bg-white/10 border-transparent hover:border-white/10'}`}
+              title="No, inaccurate"
+            >
+              <ThumbsDown className="w-4 h-4" />
+            </button>
           </div>
         </div>
 

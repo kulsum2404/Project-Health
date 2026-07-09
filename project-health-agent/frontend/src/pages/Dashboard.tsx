@@ -6,9 +6,10 @@ import { RagCard } from "@/components/RagCard"
 import { UploadDialog } from "@/components/UploadDialog"
 import { MonthlyReportButton } from "@/components/MonthlyReportButton"
 import type { Variants } from "framer-motion"
-import { motion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
-import { PortfolioTrendChart } from "@/components/PortfolioTrendChart"
+import { PortfolioComparisonChart } from "@/components/PortfolioComparisonChart"
+import { PortfolioScatterChart } from "@/components/PortfolioScatterChart"
 import type { Snapshot } from "@/api/client"
 
 const containerVariants: Variants = {
@@ -39,6 +40,35 @@ export function Dashboard() {
   const [history, setHistory] = useState<Record<number, Snapshot[]>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showSplash, setShowSplash] = useState(true)
+  const [splashText, setSplashText] = useState("Loading Workspace...")
+
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
+
+  useEffect(() => {
+    const textTimer1 = setTimeout(() => setSplashText("Analyzing Portfolio Data..."), 1500)
+    const textTimer2 = setTimeout(() => setSplashText("Generating Insights..."), 3000)
+    const timer = setTimeout(() => setShowSplash(false), 4500)
+    
+    return () => {
+      clearTimeout(textTimer1)
+      clearTimeout(textTimer2)
+      clearTimeout(timer)
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      setMousePos({ 
+        x: (e.clientX / window.innerWidth - 0.5) * 20, 
+        y: (e.clientY / window.innerHeight - 0.5) * 20 
+      })
+    }
+    if (showSplash) {
+      window.addEventListener('mousemove', handleMouseMove)
+    }
+    return () => window.removeEventListener('mousemove', handleMouseMove)
+  }, [showSplash])
 
   const fetchProjects = async () => {
     setIsLoading(true)
@@ -79,6 +109,100 @@ export function Dashboard() {
       transition={{ duration: 0.4 }}
       className="container mx-auto py-8 px-4 max-w-7xl relative z-10"
     >
+      <AnimatePresence>
+        {showSplash && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0, scale: 1.1, filter: "blur(20px)" }}
+            transition={{ duration: 1, ease: "easeInOut" }}
+            onClick={() => setShowSplash(false)}
+            className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#030712] overflow-hidden cursor-pointer"
+          >
+            {/* Animated Background Orbs with Parallax */}
+            <motion.div 
+              animate={{ 
+                x: -mousePos.x * 2,
+                y: -mousePos.y * 2,
+                scale: [1, 1.2, 1],
+                opacity: [0.3, 0.5, 0.3],
+                rotate: [0, 90, 0]
+              }}
+              transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute -top-1/4 -left-1/4 w-[800px] h-[800px] bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none" 
+            />
+            <motion.div 
+              animate={{ 
+                x: mousePos.x * 2,
+                y: mousePos.y * 2,
+                scale: [1, 1.5, 1],
+                opacity: [0.2, 0.4, 0.2],
+                rotate: [0, -90, 0]
+              }}
+              transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+              className="absolute -bottom-1/4 -right-1/4 w-[600px] h-[600px] bg-purple-600/20 rounded-full blur-[100px] pointer-events-none" 
+            />
+
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              transition={{ duration: 1, ease: "easeOut", delay: 0.2 }}
+              className="flex flex-col items-center justify-center relative z-10 pointer-events-none"
+            >
+              <div className="relative">
+                {/* Outer rotating ring */}
+                <motion.div 
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                  className="absolute -inset-4 rounded-full border-t-2 border-r-2 border-primary/50 opacity-50"
+                />
+                <motion.div 
+                  animate={{ rotate: -360 }}
+                  transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                  className="absolute -inset-8 rounded-full border-b-2 border-l-2 border-indigo-500/30 opacity-40"
+                />
+                
+                <div className="w-32 h-32 rounded-3xl bg-primary/10 flex items-center justify-center mb-10 shadow-[0_0_80px_rgba(99,102,241,0.2)] border border-primary/20 relative overflow-hidden backdrop-blur-xl">
+                  <div className="absolute inset-0 bg-gradient-to-tr from-primary/30 to-transparent animate-pulse" />
+                  <Activity className="w-16 h-16 text-primary relative z-10" />
+                </div>
+              </div>
+              
+              <h1 className="text-6xl font-black tracking-tighter mb-6 text-transparent bg-clip-text bg-gradient-to-r from-white via-indigo-200 to-white/60 drop-shadow-lg">
+                Project Health Agent
+              </h1>
+              
+              <div className="flex flex-col items-center gap-4 w-80">
+                <div className="h-1.5 w-full bg-white/10 overflow-hidden rounded-full shadow-inner relative">
+                  <motion.div 
+                    initial={{ width: "0%" }}
+                    animate={{ width: "100%" }}
+                    transition={{ duration: 4.5, ease: "linear" }}
+                    className="h-full bg-primary shadow-[0_0_10px_currentColor]"
+                  />
+                </div>
+                <motion.p 
+                  key={splashText}
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-sm font-bold uppercase tracking-[0.2em] text-indigo-300/80 animate-pulse"
+                >
+                  {splashText}
+                </motion.p>
+              </div>
+
+              <motion.p 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0.5 }}
+                transition={{ delay: 2, duration: 1 }}
+                className="absolute -bottom-24 text-xs font-semibold tracking-wider text-white/50 uppercase"
+              >
+                Click anywhere to skip
+              </motion.p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
         <motion.div 
           initial={{ opacity: 0, x: -20 }}
@@ -120,9 +244,14 @@ export function Dashboard() {
       </motion.div>
 
       {!isLoading && !error && projects.length > 0 && (
-        <motion.div variants={itemVariants} initial="hidden" animate="visible">
-          <PortfolioTrendChart history={history} projects={projects} />
-        </motion.div>
+        <>
+          <motion.div variants={itemVariants} initial="hidden" animate="visible">
+            <PortfolioComparisonChart history={history} projects={projects} />
+          </motion.div>
+          <motion.div variants={itemVariants} initial="hidden" animate="visible">
+            <PortfolioScatterChart history={history} projects={projects} />
+          </motion.div>
+        </>
       )}
 
       {isLoading ? (
@@ -173,7 +302,7 @@ export function Dashboard() {
           variants={containerVariants}
           initial="hidden"
           animate="visible"
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
+          className="grid grid-cols-1 md:grid-cols-2 gap-8"
         >
           {projects.map(project => (
             <motion.div key={project.id} variants={itemVariants}>

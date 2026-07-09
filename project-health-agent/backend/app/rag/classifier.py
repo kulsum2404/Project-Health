@@ -34,18 +34,19 @@ CPI_SPI_RED_THRESHOLD = 0.8
 CRITICAL_BLOCKER_AGE_THRESHOLD = 7  # days
 
 
-def classify_rag(signals: list[SignalResult]) -> RagResult:
+def classify_rag(signals: list[SignalResult], custom_weights: dict[str, float] | None = None) -> RagResult:
     """
     Compute the RAG status from signal results.
 
     1. Filter to available signals.
-    2. Redistribute weights proportionally.
+    2. Redistribute weights proportionally based on custom_weights or DEFAULT_WEIGHTS.
     3. Compute weighted score.
     4. Apply threshold rules with override conditions.
     5. Compute confidence.
 
     Args:
         signals: List of SignalResult from all 5 extractors.
+        custom_weights: Optional custom weights per signal.
 
     Returns:
         RagResult with status, score, confidence, and audit trail.
@@ -82,16 +83,18 @@ def classify_rag(signals: list[SignalResult]) -> RagResult:
         )
 
     # ── Redistribute weights ───────────────────────────────────────────
+    base_weights = custom_weights if custom_weights else DEFAULT_WEIGHTS
+    
     total_available_weight = sum(
-        DEFAULT_WEIGHTS.get(s.name, 0.0) for s in available
+        base_weights.get(s.name, 0.0) for s in available
     )
 
-    if total_available_weight == 0:
+    if total_available_weight <= 0:
         total_available_weight = 1.0  # safety
 
     redistributed_weights: dict[str, float] = {}
     for signal in available:
-        original_weight = DEFAULT_WEIGHTS.get(signal.name, 0.0)
+        original_weight = base_weights.get(signal.name, 0.0)
         redistributed_weights[signal.name] = original_weight / total_available_weight
 
     # ── Compute weighted score ─────────────────────────────────────────

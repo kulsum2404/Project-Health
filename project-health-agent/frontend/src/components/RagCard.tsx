@@ -18,6 +18,7 @@ interface RagCardProps {
 export function RagCard({ project, onUpdate }: RagCardProps) {
   const [isEditing, setIsEditing] = React.useState(false)
   const [isDeleting, setIsDeleting] = React.useState(false)
+  const [isAnalyzing, setIsAnalyzing] = React.useState(false)
   const [editedName, setEditedName] = React.useState(project.name)
   const [currentName, setCurrentName] = React.useState(project.name)
   
@@ -54,6 +55,20 @@ export function RagCard({ project, onUpdate }: RagCardProps) {
     } catch (err) {
       console.error("Failed to delete project", err)
       setIsDeleting(false)
+    }
+  }
+
+  const handleAnalyze = async (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsAnalyzing(true)
+    try {
+      await api.analyzeProject(project.id)
+      if (onUpdate) onUpdate()
+    } catch (err) {
+      console.error("Analysis failed", err)
+    } finally {
+      setIsAnalyzing(false)
     }
   }
   
@@ -208,16 +223,34 @@ export function RagCard({ project, onUpdate }: RagCardProps) {
       </CardContent>
       
       <CardFooter className="border-t border-white/5 pt-4 bg-black/20 flex items-center justify-between relative z-20">
-        <span className="text-xs text-muted-foreground/60 font-semibold uppercase tracking-wider">
+        <span className="text-xs text-muted-foreground/60 font-semibold uppercase tracking-wider hidden sm:inline-block">
           {isAnalyzed ? `Updated ${format(new Date(project.updated_at), "MMM d")}` : "Needs analysis"}
         </span>
-        <Link 
-          to={`/projects/${project.id}`}
-          className="text-sm font-bold text-primary flex items-center gap-1 group-hover:gap-2 transition-all hover:text-white"
-        >
-          View Details
-          <ArrowRight className="w-4 h-4" />
-        </Link>
+        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+          <Button 
+            size="sm" 
+            variant="outline" 
+            className="h-8 text-xs bg-primary/10 hover:bg-primary/20 text-primary border-primary/20"
+            onClick={handleAnalyze}
+            disabled={isAnalyzing}
+          >
+            {isAnalyzing ? (
+              <span className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                Analyzing
+              </span>
+            ) : (
+              isAnalyzed ? "Update Analysis" : "Run Analysis"
+            )}
+          </Button>
+          <Link 
+            to={`/projects/${project.id}`}
+            className="text-sm font-bold text-primary flex items-center gap-1 group-hover:gap-2 transition-all hover:text-white"
+          >
+            Details
+            <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
       </CardFooter>
     </Card>
   )

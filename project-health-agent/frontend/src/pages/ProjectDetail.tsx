@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react"
 import { useParams, Link, useNavigate } from "react-router-dom"
 import { format, parseISO } from "date-fns"
-import { ArrowLeft, RefreshCw, AlertTriangle, Calendar, DollarSign, Flag, ShieldAlert, MessageSquare, Activity, ChevronRight, ChevronDown, Zap, Edit2, Check as CheckIcon, X, ArrowRight, Trash2, Loader2, Sparkles } from "lucide-react"
+import { ArrowLeft, RefreshCw, AlertTriangle, Calendar, DollarSign, Flag, ShieldAlert, MessageSquare, Activity, ChevronRight, ChevronDown, Zap, Edit2, Check as CheckIcon, X, ArrowRight, Trash2, Loader2, Sparkles, Settings, Sliders } from "lucide-react"
 import { api, type ReportResponse, type Snapshot, type Project } from "@/api/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { ReasoningPanel } from "@/components/ReasoningPanel"
@@ -13,6 +14,7 @@ import type { Variants } from "framer-motion"
 import { motion, AnimatePresence } from "framer-motion"
 import { SchedulePieChart } from "@/components/SchedulePieChart"
 import { SentimentBarChart } from "@/components/SentimentBarChart"
+import { SignalRadarChart } from "@/components/SignalRadarChart"
 
 // Animation Variants
 const staggerContainer: Variants = {
@@ -51,6 +53,9 @@ export function ProjectDetail() {
   const [isEditingManager, setIsEditingManager] = useState(false)
   const [editedManager, setEditedManager] = useState("")
 
+  const [isWeightSettingsOpen, setIsWeightSettingsOpen] = useState(false)
+  const [tempWeights, setTempWeights] = useState<Record<string, number>>({})
+
   const fetchProjectData = async () => {
     setIsLoading(true)
     setError(null)
@@ -59,6 +64,13 @@ export function ProjectDetail() {
       setProject(projData)
       setEditedName(projData.name)
       setEditedManager(projData.manager_name)
+      setTempWeights(projData.custom_weights && Object.keys(projData.custom_weights).length > 0 ? projData.custom_weights : {
+        schedule: 0.3,
+        budget: 0.2,
+        milestones: 0.2,
+        blockers: 0.15,
+        sentiment: 0.15,
+      })
       
       try {
         const reportData = await api.getLatestReport(projectId)
@@ -126,6 +138,16 @@ export function ProjectDetail() {
       setIsEditingManager(false)
     } catch (err: any) {
       setError(err.message || "Failed to update project manager")
+    }
+  }
+
+  const handleSaveWeights = async () => {
+    try {
+      await api.updateProject(projectId, { custom_weights: tempWeights })
+      setIsWeightSettingsOpen(false)
+      handleRunAnalysis() // auto re-analyze with new weights
+    } catch (err: any) {
+      setError(err.message || "Failed to update weights")
     }
   }
 
@@ -320,6 +342,15 @@ export function ProjectDetail() {
           
           <motion.div initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ duration: 0.5 }} className="flex items-center gap-3">
             <Button 
+              onClick={() => setIsWeightSettingsOpen(true)}
+              variant="outline"
+              size="lg"
+              className="border-primary/30 text-primary hover:bg-primary/10 gap-2 font-bold"
+            >
+              <Settings className="w-5 h-5" />
+              Weights
+            </Button>
+            <Button 
               onClick={handleDeleteProject}
               variant="outline"
               size="lg"
@@ -386,6 +417,9 @@ export function ProjectDetail() {
               sourceFile={report.snapshot.source_file || ""}
               sheetCount={report.snapshot.sheet_count || 0}
               totalTasks={report.snapshot.total_tasks || 0}
+              projectId={projectId}
+              snapshotId={report.snapshot.id}
+              feedbackScore={report.snapshot.feedback_score || 0}
             />
           </motion.div>
 
@@ -424,7 +458,8 @@ export function ProjectDetail() {
                 </div>
                 Deep Dive Analytics
               </h3>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <SignalRadarChart snapshot={report.snapshot} />
                 <SchedulePieChart data={report.snapshot.signal_details.schedule} />
                 <SentimentBarChart data={report.snapshot.signal_details.sentiment} />
               </div>
@@ -481,6 +516,42 @@ export function ProjectDetail() {
           )}
         </motion.div>
       )}
+
+      {/* Weights Modal */}
+      <Dialog open={isWeightSettingsOpen} onOpenChange={setIsWeightSettingsOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sliders className="w-5 h-5 text-primary" />
+              Configure AI Math Weights
+            </DialogTitle>
+            <DialogDescription>
+              Adjust how much each signal impacts the overall health score. They should roughly add up to 100%. The AI will auto-normalize them during calculation.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            {Object.entries(tempWeights).map(([key, val]) => (
+              <div key={key} className="space-y-2">
+                <div className="flex justify-between">
+                  <label className="text-sm font-bold uppercase tracking-wider">{key}</label>
+                  <span className="text-sm text-primary font-mono">{Math.round(val * 100)}%</span>
+                </div>
+                <input 
+                  type="range" 
+                  min="0" max="1" step="0.05"
+                  value={val}
+                  onChange={(e) => setTempWeights({...tempWeights, [key]: parseFloat(e.target.value)})}
+                  className="w-full accent-primary"
+                />
+              </div>
+            ))}
+            <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
+              <Button variant="ghost" onClick={() => setIsWeightSettingsOpen(false)}>Cancel</Button>
+              <Button onClick={handleSaveWeights} className="bg-primary hover:bg-primary/90">Save & Re-Analyze</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   )
 }

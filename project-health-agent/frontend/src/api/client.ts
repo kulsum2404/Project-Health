@@ -26,6 +26,7 @@ export interface Snapshot {
   signals_skipped: string[]
   reasoning: string
   signal_summaries: Record<string, string>
+  feedback_score: number
   source_file: string
   sheet_count: number
   total_tasks: number
@@ -39,6 +40,7 @@ export interface Project {
   start_date: string | null
   end_date: string | null
   schema_mapping: Record<string, string>
+  custom_weights: Record<string, number>
   created_at: string
   updated_at: string
   is_active: boolean
@@ -119,7 +121,7 @@ class ApiClient {
     return this.request<Project>(`/projects/${id}`)
   }
 
-  updateProject(id: number, updates: Partial<{name: string, manager_name: string}>) {
+  updateProject(id: number, updates: Partial<{name: string, manager_name: string, custom_weights: Record<string, number>}>) {
     return this.request<Project>(`/projects/${id}`, {
       method: "PATCH",
       headers: {
@@ -138,7 +140,7 @@ class ApiClient {
   uploadProject(file: File) {
     const formData = new FormData()
     formData.append("file", file)
-    return this.request<{ project_id: number; message: string; detected_mapping: any }>("/projects/upload", {
+    return this.request<{ project_id: number; message: string; detected_mapping: any; data_warnings: string[] }>("/projects/upload", {
       method: "POST",
       body: formData,
     })
@@ -146,6 +148,16 @@ class ApiClient {
 
   analyzeProject(id: number) {
     return this.request<Snapshot>(`/projects/${id}/analyze`, { method: "POST" })
+  }
+
+  submitFeedback(projectId: number, snapshotId: number, score: number) {
+    return this.request<{ status: string; feedback_score: number }>(`/projects/${projectId}/snapshots/${snapshotId}/feedback`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ score }),
+    })
   }
 
   // Report endpoints

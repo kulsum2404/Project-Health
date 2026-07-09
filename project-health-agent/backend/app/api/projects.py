@@ -103,6 +103,28 @@ async def upload_project(
         start_date = None
         end_date = None
 
+    # Data formatting pre-check for warnings
+    data_warnings = []
+    try:
+        df = get_dataframe_from_project_data(project_data)
+        # Check start/end dates
+        date_cols = [mapping.get("planned_start"), mapping.get("planned_end")]
+        for col in date_cols:
+            if col and col in df.columns:
+                invalid_dates = pd.to_datetime(df[col], errors='coerce').isna().sum()
+                if invalid_dates > 0:
+                    data_warnings.append(f"Column '{col}' contains {invalid_dates} unparseable or missing dates.")
+        
+        # Check progress column
+        prog_col = mapping.get("progress")
+        if prog_col and prog_col in df.columns:
+            # try to parse as numeric
+            invalid_prog = pd.to_numeric(df[prog_col].astype(str).str.rstrip('%'), errors='coerce').isna().sum()
+            if invalid_prog > 0:
+                data_warnings.append(f"Column '{prog_col}' contains {invalid_prog} non-numeric values.")
+    except Exception as e:
+        logger.warning(f"Failed to run data pre-checks: {e}")
+
     # Create project record
     project = Project(
         name=project_data.project_name,
@@ -113,6 +135,7 @@ async def upload_project(
         end_date=end_date,
         schema_mapping=mapping,
         mapping_log=log,
+        custom_weights={},
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
@@ -129,6 +152,7 @@ async def upload_project(
         detected_mapping=mapping,
         mapping_log=log,
         message=f"Project '{project.name}' created successfully with {len(mapping)} mapped fields.",
+        data_warnings=data_warnings,
     )
 
 
@@ -156,6 +180,7 @@ async def list_projects(
             start_date=project.start_date,
             end_date=project.end_date,
             schema_mapping=project.schema_mapping,
+            custom_weights=project.custom_weights or {},
             created_at=project.created_at,
             updated_at=project.updated_at,
             is_active=project.is_active,
@@ -201,6 +226,7 @@ async def get_all_projects_history(
                 signals_skipped=s.signals_skipped,
                 reasoning=s.reasoning,
                 signal_summaries=s.signal_summaries,
+                feedback_score=s.feedback_score,
             )
             for s in snapshots
         ]
@@ -232,6 +258,7 @@ async def get_project(
         start_date=project.start_date,
         end_date=project.end_date,
         schema_mapping=project.schema_mapping,
+        custom_weights=project.custom_weights or {},
         created_at=project.created_at,
         updated_at=project.updated_at,
         is_active=project.is_active,
@@ -257,6 +284,8 @@ async def update_project(
         project.name = update_data.name
     if update_data.manager_name is not None:
         project.manager_name = update_data.manager_name
+    if update_data.custom_weights is not None:
+        project.custom_weights = update_data.custom_weights
         
     project.updated_at = datetime.utcnow()
     
@@ -333,7 +362,7 @@ async def analyze_project(
     signals = [schedule_signal, budget_signal, milestone_signal, blocker_signal, sentiment_signal]
 
     # ── Classify RAG ───────────────────────────────────────────────────
-    rag_result = classify_rag(signals)
+    rag_result = classify_rag(signals, project.custom_weights)
 
     # ── Generate LLM reasoning + per-signal summaries (single call) ───
     try:
@@ -407,6 +436,7 @@ async def analyze_project(
         signals_skipped=snapshot.signals_skipped,
         reasoning=snapshot.reasoning,
         signal_summaries=snapshot.signal_summaries,
+        feedback_score=snapshot.feedback_score,
         source_file=source_file,
         sheet_count=sheet_count,
         total_tasks=total_tasks,
@@ -472,6 +502,29 @@ async def get_signal_explanation_endpoint(
     session.commit()
 
     return {"signal_name": signal_name, "explanation": explanation}
+
+
+from pydantic import BaseModel
+class FeedbackRequest(BaseModel):
+    score: int
+
+@router.post("/projects/{project_id}/snapshots/{snapshot_id}/feedback")
+async def submit_feedback(
+    project_id: int,
+    snapshot_id: int,
+    feedback: FeedbackRequest,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Submit a +1 or -1 feedback score for a snapshot's reasoning."""
+    snapshot = session.get(WeeklySnapshot, snapshot_id)
+    if not snapshot or snapshot.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+        
+    snapshot.feedback_score = feedback.score
+    session.add(snapshot)
+    session.commit()
+    
+    return {"status": "success", "feedback_score": snapshot.feedback_score}
 
 
 def _persist_blockers(

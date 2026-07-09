@@ -19,8 +19,11 @@ export function UploadDialog({ onUploadSuccess }: UploadDialogProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [warnings, setWarnings] = useState<string[]>([])
+  const [uploadedProjectId, setUploadedProjectId] = useState<number | null>(null)
   const [success, setSuccess] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -62,20 +65,44 @@ export function UploadDialog({ onUploadSuccess }: UploadDialogProps) {
     
     setIsUploading(true)
     setError(null)
+    setWarnings([])
     
     try {
       const response = await api.uploadProject(file)
+      
+      if (response.data_warnings && response.data_warnings.length > 0) {
+        setWarnings(response.data_warnings)
+        setUploadedProjectId(response.project_id)
+        setIsUploading(false)
+        return
+      }
+
+      await proceedToAnalysis(response.project_id)
+    } catch (err: any) {
+      setError(err.message || "Failed to upload project plan")
+      setIsUploading(false)
+    }
+  }
+
+  const proceedToAnalysis = async (projectId: number) => {
+    setIsUploading(false)
+    setIsAnalyzing(true)
+    try {
+      await api.analyzeProject(projectId)
+      
       setSuccess(true)
       setTimeout(() => {
         setIsOpen(false)
         setSuccess(false)
         setFile(null)
-        onUploadSuccess(response.project_id)
+        setWarnings([])
+        setUploadedProjectId(null)
+        onUploadSuccess(projectId)
       }, 1500)
     } catch (err: any) {
-      setError(err.message || "Failed to upload project plan")
+      setError(err.message || "Failed to analyze project")
     } finally {
-      setIsUploading(false)
+      setIsAnalyzing(false)
     }
   }
 
@@ -95,7 +122,51 @@ export function UploadDialog({ onUploadSuccess }: UploadDialogProps) {
           </DialogDescription>
         </DialogHeader>
         
-        {!success ? (
+        {warnings.length > 0 && !success ? (
+          <div className="space-y-4">
+            <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
+              <div className="flex items-center gap-2 text-amber-500 mb-2">
+                <AlertTriangle className="w-5 h-5" />
+                <h3 className="font-semibold">Data Formatting Warnings</h3>
+              </div>
+              <p className="text-sm text-muted-foreground mb-3">
+                We detected some potential issues with the data in your Excel file that may impact the accuracy of the analysis:
+              </p>
+              <ul className="list-disc pl-5 text-sm space-y-1 text-foreground/80">
+                {warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </div>
+            
+            {error && (
+              <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md border border-destructive/20 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+            
+            <div className="flex justify-end gap-3 pt-4 border-t">
+              <Button variant="ghost" onClick={() => setIsOpen(false)} disabled={isAnalyzing}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={() => uploadedProjectId && proceedToAnalysis(uploadedProjectId)} 
+                disabled={isAnalyzing} 
+                className="min-w-[120px] bg-amber-500 hover:bg-amber-600 text-white"
+              >
+                {isAnalyzing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Analyzing AI...
+                  </>
+                ) : (
+                  "Continue Anyway"
+                )}
+              </Button>
+            </div>
+          </div>
+        ) : !success ? (
           <div className="space-y-4">
             <div
               className={`border-2 border-dashed rounded-xl p-8 text-center transition-all duration-200 ${
@@ -145,14 +216,19 @@ export function UploadDialog({ onUploadSuccess }: UploadDialogProps) {
             )}
             
             <div className="flex justify-end gap-3 pt-4 border-t">
-              <Button variant="ghost" onClick={() => setIsOpen(false)} disabled={isUploading}>
+              <Button variant="ghost" onClick={() => setIsOpen(false)} disabled={isUploading || isAnalyzing}>
                 Cancel
               </Button>
-              <Button onClick={handleUpload} disabled={!file || isUploading} className="min-w-[120px]">
+              <Button onClick={handleUpload} disabled={!file || isUploading || isAnalyzing} className="min-w-[120px]">
                 {isUploading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     Uploading...
+                  </>
+                ) : isAnalyzing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Analyzing AI...
                   </>
                 ) : (
                   "Upload File"
@@ -166,8 +242,8 @@ export function UploadDialog({ onUploadSuccess }: UploadDialogProps) {
               <CheckCircle2 className="w-8 h-8" />
             </div>
             <div className="text-center">
-              <h3 className="text-xl font-semibold">Upload Complete!</h3>
-              <p className="text-muted-foreground mt-1 text-sm">Schema mapped successfully. Redirecting...</p>
+              <h3 className="text-xl font-semibold">Ready to Review!</h3>
+              <p className="text-muted-foreground mt-1 text-sm">Upload & Analysis complete. Redirecting...</p>
             </div>
           </div>
         )}

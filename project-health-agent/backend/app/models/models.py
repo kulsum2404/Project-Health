@@ -54,6 +54,9 @@ class Project(SQLModel, table=True):
     mapping_log: list[dict[str, Any]] = SQLField(
         default_factory=list, sa_column=Column(JSON)
     )
+    custom_weights: Optional[dict[str, float]] = SQLField(
+        default_factory=dict, sa_column=Column(JSON)
+    )
     created_at: datetime = SQLField(default_factory=datetime.utcnow)
     updated_at: datetime = SQLField(default_factory=datetime.utcnow)
     is_active: bool = True
@@ -85,6 +88,7 @@ class WeeklySnapshot(SQLModel, table=True):
     sentiment_score: Optional[float] = None
 
     # Raw signal details for audit trail
+    feedback_score: Optional[int] = 0
     signal_details: dict[str, Any] = SQLField(
         default_factory=dict, sa_column=Column(JSON)
     )
@@ -102,6 +106,9 @@ class WeeklySnapshot(SQLModel, table=True):
     signal_summaries: dict[str, str] = SQLField(
         default_factory=dict, sa_column=Column(JSON)
     )
+
+    # User feedback on reasoning (+1 or -1)
+    feedback_score: int = 0
 
     # Relationship
     project: Optional["Project"] = Relationship(back_populates="snapshots")
@@ -191,6 +198,7 @@ class ProjectResponse(BaseModel):
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     schema_mapping: dict[str, Any]
+    custom_weights: Optional[dict[str, float]] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
     is_active: bool
@@ -205,6 +213,7 @@ class ProjectUpdate(BaseModel):
     
     name: Optional[str] = None
     manager_name: Optional[str] = None
+    custom_weights: Optional[dict[str, float]] = None
 
 
 class UploadResponse(BaseModel):
@@ -215,6 +224,7 @@ class UploadResponse(BaseModel):
     detected_mapping: dict[str, Any]
     mapping_log: list[dict[str, Any]]
     message: str
+    data_warnings: list[str] = Field(default_factory=list)
 
 
 class SnapshotResponse(BaseModel):
@@ -236,6 +246,7 @@ class SnapshotResponse(BaseModel):
     signals_skipped: list[str]
     reasoning: str
     signal_summaries: dict[str, str] = {}
+    feedback_score: Optional[int] = 0
     source_file: str = ""
     sheet_count: int = 0
     total_tasks: int = 0

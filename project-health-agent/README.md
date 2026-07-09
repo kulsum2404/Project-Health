@@ -28,8 +28,27 @@ The Project Health Agent acts as a completely automated analyst for your project
     - **Stakeholder Sentiment**: Classifies free-text status updates via Google's Gemini Flash 2.5 LLM or Groq models (e.g. `openai/gpt-oss-120b`) into positive/neutral/negative and aggregates an overall sentiment score.
 6. **RAG Classification Engine (`classifier.py`)**: A deterministic mathematical model calculates a final score (0-100) and assigns a Red, Amber, or Green status based on strict thresholds. If data is missing (e.g., a spreadsheet has no budget columns), the engine gracefully degrades, redistributing weights to available signals and outputting a "Data Confidence" percentage.
 7. **LLM Reasoning (`reasoning.py`)**: The computed metrics are fed into the LLM (Gemini or Groq) to generate a grounded, plain-English explanation for the score—explaining *why* the project is healthy or failing based strictly on the math.
-8. **Interactive Glassmorphism Dashboard**: The frontend polls this data and renders an incredibly immersive, premium UI utilizing `framer-motion` for staggered reveals, typewriter text effects for the AI output, and interactive background gradients.
+8. **Interactive Glassmorphism Dashboard**: The frontend polls this data and renders an incredibly immersive, premium UI utilizing `framer-motion` for staggered reveals, typewriter text effects for the AI output, and interactive background gradients. The dashboard features a cinematic startup splash screen, mouse-tracking parallax effects, and click-to-skip interaction.
 9. **Executive Synthesis (`synthesis.py`)**: Once a month, the system analyzes all historical snapshots across the entire portfolio, prompts the LLM to identify cross-project patterns (e.g., "Systemic schedule delays"), and utilizes `python-pptx` to auto-generate a 7-slide `.pptx` presentation.
+
+---
+
+## Key Features
+
+### Analytics & Charting
+- **Cross-Project Signal Bar Chart**: Side-by-side comparison of all 5 health signals across every project in the portfolio.
+- **Schedule vs. Budget Quadrant Scatter Plot**: Industry-standard SPI/CPI quadrant view. Projects are plotted as colored dots, top-right = healthy, bottom-left = critical risk.
+- **Signal Health Radar Chart** (per project): A spider-web chart showing the complete health profile of a single project across all 5 signals.
+- **Health Score Trend Chart** (per project): Historical line chart showing how a project's weighted score has evolved over time.
+- **Schedule Breakdown Pie Chart**: Task completion breakdown (on-time, late, not-started).
+- **Sentiment Distribution Bar Chart**: Distribution of positive / neutral / negative sentiment in status updates.
+
+### UX Enhancements
+- **Cinematic Startup Screen**: 4.5-second animated splash with parallax mouse tracking and click-to-skip.
+- **Custom AI Weight Sliders**: Configure how much impact each signal (Schedule, Budget, etc.) has on the final health score.
+- **Data Health Pre-Checks**: On upload, the system automatically warns you about bad data (missing dates, non-numeric values) before running analysis.
+- **Interactive AI Feedback**: Thumbs up / thumbs down buttons on AI-generated summaries to rate reasoning quality.
+- **Auto-Analysis on Upload**: Projects immediately begin analysis after a successful file upload with no extra clicks.
 
 ---
 
@@ -54,7 +73,7 @@ The Project Health Agent acts as a completely automated analyst for your project
 - **Framer Motion**: Powers the complex UI interactions, such as the glowing orbs background, typewriter text effects, and the "System Analyzing" sequence.
 - **Lucide React**: Premium, consistent icon library used throughout the dashboard.
 - **Shadcn UI**: Unstyled, accessible UI components (Cards, Badges, Inputs, Buttons) that were heavily customized to create a dark-mode "Glassmorphism" design system.
-- **Recharts**: Renders the historical trend charts for project health scores.
+- **Recharts**: Renders all charts including the historical trend chart, portfolio comparison bar chart, Schedule vs. Budget quadrant scatter plot, signal radar chart, schedule pie chart, and sentiment bar chart.
 - **React Router DOM**: Handles client-side navigation between the Dashboard and Project Detail views.
 
 ---
