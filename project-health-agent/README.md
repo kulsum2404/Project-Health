@@ -25,9 +25,9 @@ The Project Health Agent acts as a completely automated analyst for your project
    - **Budget Burn**: Calculates CPI (Earned Value / Actual Cost) and overall burn rate.
    - **Milestone Health**: Calculates SPI and tracks on-time completion percentage.
    - **Blockers**: A deterministic severity-age scoring model that penalizes older, higher-severity issues.
-   - **Stakeholder Sentiment**: Classifies free-text status updates via Google's Gemini Flash 2.5 LLM into positive/neutral/negative and aggregates an overall sentiment score.
+    - **Stakeholder Sentiment**: Classifies free-text status updates via Google's Gemini Flash 2.5 LLM or Groq models (e.g. `openai/gpt-oss-120b`) into positive/neutral/negative and aggregates an overall sentiment score.
 6. **RAG Classification Engine (`classifier.py`)**: A deterministic mathematical model calculates a final score (0-100) and assigns a Red, Amber, or Green status based on strict thresholds. If data is missing (e.g., a spreadsheet has no budget columns), the engine gracefully degrades, redistributing weights to available signals and outputting a "Data Confidence" percentage.
-7. **LLM Reasoning (`reasoning.py`)**: The computed metrics are fed into Gemini Flash 2.5 to generate a grounded, plain-English explanation for the score—explaining *why* the project is healthy or failing based strictly on the math.
+7. **LLM Reasoning (`reasoning.py`)**: The computed metrics are fed into the LLM (Gemini or Groq) to generate a grounded, plain-English explanation for the score—explaining *why* the project is healthy or failing based strictly on the math.
 8. **Interactive Glassmorphism Dashboard**: The frontend polls this data and renders an incredibly immersive, premium UI utilizing `framer-motion` for staggered reveals, typewriter text effects for the AI output, and interactive background gradients.
 9. **Executive Synthesis (`synthesis.py`)**: Once a month, the system analyzes all historical snapshots across the entire portfolio, prompts the LLM to identify cross-project patterns (e.g., "Systemic schedule delays"), and utilizes `python-pptx` to auto-generate a 7-slide `.pptx` presentation.
 
@@ -45,7 +45,7 @@ The Project Health Agent acts as a completely automated analyst for your project
 - **Uvicorn**: Lightning-fast ASGI server to run the FastAPI application.
 - **APScheduler**: Handles background cron jobs for the automated weekly analysis runs.
 - **python-pptx**: Programmatically generates native Microsoft PowerPoint files for the monthly synthesis.
-- **Google GenAI / Anthropic SDK**: Used to connect to the Gemini 2.5 Flash model for sentiment analysis and text generation.
+- **Google GenAI & OpenAI SDK**: Used to connect to either the Gemini API (using `google-genai`) or the Groq API (using the OpenAI-compatible SDK) depending on config. Defaults to Groq `openai/gpt-oss-120b` or Gemini `gemini-2.5-flash`.
 
 ### Frontend
 - **React 18 & Vite**: Lightning-fast frontend build tooling and UI library.

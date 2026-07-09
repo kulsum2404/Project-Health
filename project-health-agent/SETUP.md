@@ -42,7 +42,9 @@ The backend is built with FastAPI and runs on Python.
      copy .env.example .env
      ```
    - Open the `.env` file in your code editor.
-   - Set `ANTHROPIC_API_KEY` to your Gemini Flash 2.5 API key (or Anthropic key). *(Note: The application has been configured to route through the Gemini provider despite the variable name).*
+   - Set the environment variables:
+     * **For Gemini**: Set `GEMINI_API_KEY` to your Google Gemini API key and set `LLM_MODEL=gemini-2.5-flash`.
+     * **For Groq**: Set `GROQ_API_KEY` to your Groq API key (starts with `gsk_`) and set `LLM_MODEL=openai/gpt-oss-120b` (or other Groq models like `llama-3.3-70b-versatile`).
 
 6. **Start the Backend Server**:
    ```powershell
