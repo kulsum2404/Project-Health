@@ -9,7 +9,6 @@ import type { Variants } from "framer-motion"
 import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { PortfolioComparisonChart } from "@/components/PortfolioComparisonChart"
-import { PortfolioScatterChart } from "@/components/PortfolioScatterChart"
 import type { Snapshot } from "@/api/client"
 
 const containerVariants: Variants = {
@@ -244,14 +243,9 @@ export function Dashboard() {
       </motion.div>
 
       {!isLoading && !error && projects.length > 0 && (
-        <>
-          <motion.div variants={itemVariants} initial="hidden" animate="visible">
-            <PortfolioComparisonChart history={history} projects={projects} />
-          </motion.div>
-          <motion.div variants={itemVariants} initial="hidden" animate="visible">
-            <PortfolioScatterChart history={history} projects={projects} />
-          </motion.div>
-        </>
+        <motion.div variants={itemVariants} initial="hidden" animate="visible">
+          <PortfolioComparisonChart history={history} projects={projects} />
+        </motion.div>
       )}
 
       {isLoading ? (
