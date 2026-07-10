@@ -29,6 +29,8 @@ REQUIRED_COLUMNS = {
     "actual_start": ["actual_start"],
     "is_critical": ["is_critical", "critical_path", "critical", "Critical ?"],
     "status": ["status", "task_status", "Status"],
+    "predecessors": ["predecessors", "Predecessors", "dependencies", "depends_on"],
+    "task_name": ["task_name", "Task Name", "name", "activity", "title", "task"],
 }
 
 
@@ -40,6 +42,9 @@ def _find_column(df: pd.DataFrame, mapping: dict[str, str], candidates: list[str
         if df.empty:
             return True
         fill_count = df[col_name].notna().sum()
+        if fill_count == 0:
+            logger.warning(f"Schedule signal: mapped column '{col_name}' is 100% empty. Skipping and trying next synonym.")
+            return False
         return fill_count >= 3 or (fill_count / len(df)) > 0.1
 
     mapped_but_empty = None
@@ -183,6 +188,48 @@ def compute_schedule_signal(
             delays = (ref_ts - planned_ends[overdue_mask]).dt.days
             critical_delay_days = float(delays.max()) if len(delays) > 0 else 0.0
 
+    # ── Dependency Risk Propagation (1-hop) ────────────────────────────
+    pred_col = _find_column(df, mapping, REQUIRED_COLUMNS.get("predecessors", []))
+    name_col = _find_column(df, mapping, REQUIRED_COLUMNS.get("task_name", []))
+    
+    inherited_risk_tasks = []
+    
+    if pred_col and name_col:
+        # Build a map of Task Row Index -> Task Name
+        task_names = df[name_col].astype(str).tolist()
+        
+        # Build 1-hop dependent graph: Predecessor Index -> List of Dependent Indices
+        # Assuming Predecessors column has comma-separated row numbers (1-indexed for Excel)
+        dependents: dict[int, list[int]] = {}
+        for idx, val in df[pred_col].items():
+            if pd.notna(val):
+                preds_str = str(val).replace(';', ',').split(',')
+                for p in preds_str:
+                    p = p.strip()
+                    # Just grab the number, ignore FF/FS/SS etc.
+                    num_part = "".join(c for c in p if c.isdigit())
+                    if num_part:
+                        try:
+                            # 1-indexed Excel row -> 0-indexed pandas row
+                            # Often rows are offset by headers, assume raw row index roughly aligns for this basic check
+                            pred_idx = int(num_part) - 2 
+                            if 0 <= pred_idx < len(df):
+                                dependents.setdefault(pred_idx, []).append(idx)
+                        except ValueError:
+                            pass
+
+        # For every overdue task, find its dependents
+        for overdue_idx in df[overdue_mask].index:
+            deps = dependents.get(overdue_idx, [])
+            for dep_idx in deps:
+                if dep_idx not in df[overdue_mask].index:
+                    delay = (ref_ts - planned_ends[overdue_idx]).days if pd.notna(planned_ends[overdue_idx]) else 0
+                    inherited_risk_tasks.append({
+                        "dependent_task": task_names[dep_idx],
+                        "blocked_by": task_names[overdue_idx],
+                        "delay_days": delay
+                    })
+
     # ── Score calculation ──────────────────────────────────────────────
     # Base score from % on schedule (inverted: 0% overdue = 100 score)
     base_score = max(0.0, 100.0 - pct_overdue)
@@ -214,6 +261,9 @@ def compute_schedule_signal(
         reason_parts.append(
             f"Critical path delay of {critical_delay_days:.0f} days detected."
         )
+    if inherited_risk_tasks:
+        reason_parts.append(f"{len(inherited_risk_tasks)} tasks at risk due to dependencies on overdue tasks.")
+        details["at_risk_by_inheritance"] = inherited_risk_tasks
 
     logger.info("Schedule signal: score=%.1f, overdue=%d/%d", score, total_overdue, total_with_dates)
 

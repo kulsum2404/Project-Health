@@ -51,17 +51,40 @@ def _find_notes_columns(df: pd.DataFrame, mapping: dict[str, str]) -> list[str]:
     """Find all columns that likely contain free-text notes."""
     found: list[str] = []
 
-    # Check mapping first
+    def is_usable(col_name: str) -> bool:
+        if df.empty:
+            return True
+        fill_count = df[col_name].notna().sum()
+        # Accept column if it has at least 1 non-null value for sentiment
+        if fill_count == 0:
+            logger.warning(f"Sentiment signal: mapped column '{col_name}' is 100% empty. Skipping and trying next synonym.")
+            return False
+        return True
+
+    # Check mapping first (canonical key "notes")
+    if "notes" in mapping:
+        mapped = mapping["notes"]
+        if mapped in df.columns and is_usable(mapped):
+            found.append(mapped)
+
+    # Check mapping backwards (if mapping maps alias -> canonical, which it does)
     for candidate in COLUMN_CANDIDATES:
         if candidate in mapping:
             mapped = mapping[candidate]
-            if mapped in df.columns:
+            if mapped in df.columns and is_usable(mapped) and mapped not in found:
                 found.append(mapped)
 
     # Direct column matching
     for candidate in COLUMN_CANDIDATES:
         if candidate in df.columns and candidate not in found:
-            found.append(candidate)
+            if is_usable(candidate):
+                found.append(candidate)
+        else:
+            # Case-insensitive match
+            for col in df.columns:
+                if candidate.lower() == str(col).lower() and col not in found:
+                    if is_usable(str(col)):
+                        found.append(str(col))
 
     return found
 

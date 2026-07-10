@@ -8,6 +8,7 @@ Data source: blocker/issue notes or status columns.
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime
 from typing import Any
 
@@ -43,14 +44,38 @@ COLUMN_CANDIDATES = {
 
 
 def _find_column(df: pd.DataFrame, mapping: dict[str, str], candidates: list[str]) -> str | None:
+    def is_usable(col_name: str) -> bool:
+        if df.empty:
+            return True
+        fill_count = df[col_name].notna().sum()
+        if fill_count == 0:
+            logger.warning(f"Blocker signal: mapped column '{col_name}' is 100% empty. Skipping and trying next synonym.")
+            return False
+        return fill_count >= 3 or (fill_count / len(df)) > 0.1
+
+    mapped_but_empty = None
+
     for candidate in candidates:
         if candidate in mapping:
             mapped = mapping[candidate]
             if mapped in df.columns:
-                return mapped
+                if is_usable(mapped):
+                    return mapped
+                if mapped_but_empty is None:
+                    mapped_but_empty = mapped
+
+    for candidate in candidates:
+        if candidate in df.columns:
+            if is_usable(candidate):
+                return candidate
+    
+    if mapped_but_empty:
+        return mapped_but_empty
+
     for candidate in candidates:
         if candidate in df.columns:
             return candidate
+
     return None
 
 
@@ -109,13 +134,34 @@ def compute_blocker_signal(
             reason="No blocker columns found in data.",
         )
 
-    # Filter to non-empty blocker rows
+    # A row should only be considered a blocker if it has a description or severity.
+    # Otherwise, we might mistakenly treat normal tasks as blockers if they just have a Start Date.
+    mask = pd.Series([False] * len(df), index=df.index)
+    has_blocker_data = False
+    
     if desc_col:
-        has_content = df[desc_col].astype(str).str.strip().ne("") & df[desc_col].notna()
-        blocker_df = df[has_content].copy()
-    else:
-        blocker_df = df.copy()
+        desc_mask = df[desc_col].notna() & (df[desc_col] != "")
+        if desc_mask.any():
+            mask = mask | desc_mask
+            has_blocker_data = True
+            
+    if severity_col:
+        sev_mask = df[severity_col].notna() & (df[severity_col] != "")
+        if sev_mask.any():
+            mask = mask | sev_mask
+            has_blocker_data = True
 
+    if not has_blocker_data:
+        return SignalResult(
+            name=SIGNAL_NAME,
+            score=0.0,
+            weight=DEFAULT_WEIGHT,
+            available=False,
+            details={"reason": "No populated blocker description or severity columns found"},
+            reason="Blocker columns not found in data.",
+        )
+
+    blocker_df = df[mask]
     total_blockers = len(blocker_df)
 
     if total_blockers == 0:
@@ -196,9 +242,9 @@ def compute_blocker_signal(
         if sev in ("medium", "high") and not has_moderate_unresolved:
             has_moderate_unresolved = True
 
-    # Weighted sum
+    # Weighted sum using logarithmic age weighting
     raw_score = sum(
-        SEVERITY_WEIGHTS.get(sev, 2.0) * age
+        SEVERITY_WEIGHTS.get(sev, 2.0) * math.log(1 + age)
         for sev, age in zip(severities, ages)
     )
 
@@ -219,6 +265,9 @@ def compute_blocker_signal(
     }
 
     reason_parts = [f"{unresolved_count} unresolved blockers out of {total_blockers} total."]
+    if ages:
+        oldest_age = int(max(ages))
+        reason_parts.append(f"Oldest unresolved blocker is {oldest_age} days old.")
     if critical_count > 0:
         reason_parts.append(f"{critical_count} critical blocker(s).")
     if has_critical_over_7d:

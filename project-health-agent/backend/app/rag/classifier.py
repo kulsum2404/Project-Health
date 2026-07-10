@@ -34,7 +34,11 @@ CPI_SPI_RED_THRESHOLD = 0.8
 CRITICAL_BLOCKER_AGE_THRESHOLD = 7  # days
 
 
-def classify_rag(signals: list[SignalResult], custom_weights: dict[str, float] | None = None) -> RagResult:
+def classify_rag(
+    signals: list[SignalResult], 
+    custom_weights: dict[str, float] | None = None,
+    self_reported_status: str | None = None
+) -> RagResult:
     """
     Compute the RAG status from signal results.
 
@@ -172,6 +176,25 @@ def classify_rag(signals: list[SignalResult], custom_weights: dict[str, float] |
         status.value, weighted_score, confidence, override_reasons,
     )
 
+    # ── Discrepancy Detection ──────────────────────────────────────────
+    discrepancy_flag = False
+    if self_reported_status:
+        reported_lower = self_reported_status.lower()
+        # Map reported string to RAG tier (3=Green, 2=Amber, 1=Red)
+        reported_tier = 0
+        if "green" in reported_lower or "on track" in reported_lower:
+            reported_tier = 3
+        elif "amber" in reported_lower or "yellow" in reported_lower or "at risk" in reported_lower:
+            reported_tier = 2
+        elif "red" in reported_lower or "delayed" in reported_lower or "critical" in reported_lower:
+            reported_tier = 1
+            
+        computed_tier = 3 if status == RagStatus.GREEN else 2 if status == RagStatus.AMBER else 1
+        
+        # If they differ by more than 1 tier (e.g. 3 vs 1)
+        if reported_tier > 0 and abs(reported_tier - computed_tier) > 1:
+            discrepancy_flag = True
+
     return RagResult(
         status=status,
         weighted_score=weighted_score,
@@ -180,6 +203,8 @@ def classify_rag(signals: list[SignalResult], custom_weights: dict[str, float] |
         signals_used=signals_used,
         signals_skipped=signals_skipped,
         override_reasons=override_reasons,
+        self_reported_status=self_reported_status,
+        discrepancy_flag=discrepancy_flag,
     )
 
 

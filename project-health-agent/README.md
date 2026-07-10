@@ -24,7 +24,7 @@ The Project Health Agent acts as a completely automated analyst for your project
    - **Schedule Slippage**: Computes % of overdue tasks and penalizes for critical path delays.
    - **Budget Burn**: Calculates CPI (Earned Value / Actual Cost) and overall burn rate.
    - **Milestone Health**: Calculates SPI and tracks on-time completion percentage.
-   - **Blockers**: A deterministic severity-age scoring model that penalizes older, higher-severity issues.
+   - **Blockers**: A deterministic severity-age scoring model that leverages logarithmic aging (`log(1 + age_days)`) to penalize older, higher-severity issues without linear score blowouts.
     - **Stakeholder Sentiment**: Classifies free-text status updates via Google's Gemini Flash 2.5 LLM or Groq models (e.g. `openai/gpt-oss-120b`) into positive/neutral/negative and aggregates an overall sentiment score.
 6. **RAG Classification Engine (`classifier.py`)**: A deterministic mathematical model calculates a final score (0-100) and assigns a Red, Amber, or Green status based on strict thresholds. If data is missing (e.g., a spreadsheet has no budget columns), the engine gracefully degrades, redistributing weights to available signals and outputting a "Data Confidence" percentage.
 7. **LLM Reasoning (`reasoning.py`)**: The computed metrics are fed into the LLM (Gemini or Groq) to generate a grounded, plain-English explanation for the score—explaining *why* the project is healthy or failing based strictly on the math.
@@ -89,8 +89,12 @@ CPI (Cost Performance Index) and SPI (Schedule Performance Index) are industry-s
 ### Graceful Degradation Strategy
 Real-world `.xlsx` files are messy. Instead of failing when columns are missing, the system detects missing data, drops the signal, and **redistributes its weight proportionally** across the remaining signals. A `confidence` score (0-100%) is surfaced to the user reflecting data completeness.
 
-### Grounded LLM Reasoning
-To prevent hallucinated justifications, the LLM is *never* fed the raw spreadsheet text when determining status. It is only given the structured, computed JSON from the 5 signal extractors.
+### Grounded LLM Reasoning & Discrepancy Detection
+To prevent hallucinated justifications, the LLM is *never* fed the raw spreadsheet text when determining status. It is only given the structured, computed JSON from the 5 signal extractors. 
+Additionally, the system automatically extracts the PM's **self-reported status** from the Summary sheet, compares it against the engine's computed RAG status, and flags discrepancies. The LLM is then prompted to explain *why* the data contradicts the PM's self-reported status, keeping project managers accountable.
+
+### 1-Hop Dependency Risk Propagation
+The engine traverses the "Predecessors" column in Microsoft Project/Excel exports to build a 1-hop dependency graph. If a task on the critical path is overdue, the engine identifies all immediate downstream dependents and explicitly surfaces them as "at risk by inheritance" in the final executive report.
 
 ---
 

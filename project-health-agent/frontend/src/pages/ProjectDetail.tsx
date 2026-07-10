@@ -401,6 +401,23 @@ export function ProjectDetail() {
         <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="space-y-8">
           
           {/* ── Weekly Health Report (primary view) ── */}
+          {report.snapshot.discrepancy_flag && (
+            <motion.div variants={fadeUp}>
+              <div className="bg-destructive/10 border border-destructive/30 rounded-2xl p-4 flex items-start gap-4 mb-2 shadow-lg backdrop-blur-md">
+                <AlertTriangle className="w-6 h-6 text-destructive shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-bold text-destructive text-lg">Self-Reported Status Discrepancy Detected</h4>
+                  <p className="text-sm text-destructive/90 mt-1 font-medium">
+                    {report.snapshot.discrepancy_reason || "The self-reported status in the project file differs significantly from the computed system health."}
+                  </p>
+                  <div className="mt-3 flex gap-4 text-xs font-bold uppercase tracking-wider">
+                    <span className="bg-destructive/20 text-destructive px-2 py-1 rounded">Self-Reported: {report.snapshot.self_reported_status}</span>
+                    <span className="bg-primary/20 text-primary px-2 py-1 rounded">System Computed: {report.snapshot.rag_status.toUpperCase()}</span>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
           <motion.div variants={fadeUp}>
             <ReasoningPanel
               reasoning={report.snapshot.reasoning}

@@ -188,8 +188,16 @@ def map_schema_heuristic(
         "status": ["status", "task_status", "state", "progress_status", "current_status"],
         "is_critical": ["critical", "is_critical", "critical_path", "on_critical_path", "critical_?", "critical ?"],
         "pct_complete": ["pct_complete", "percent_complete", "%_complete", "completion", "progress", "% complete", "complete"],
-        "planned_budget": ["budget", "planned_budget", "baseline_cost", "planned_cost", "estimated_cost", "cost", "total_cost", "amount"],
-        "actual_cost": ["actual_cost", "actual_spend", "spend", "cost_to_date", "incurred_cost", "actuals"],
+        "planned_budget": [
+            "budget", "planned_budget", "baseline_cost", "planned_cost", "estimated_cost",
+            "cost", "total_cost", "amount", "fixed_cost", "bac", "budget_at_completion",
+            "total_budget", "baseline cost", "fixed cost", "budget cost",
+        ],
+        "actual_cost": [
+            "actual_cost", "actual_spend", "spend", "cost_to_date", "incurred_cost", "actuals",
+            "actual_expenditure", "expenditure", "actual", "acwp", "actual cost", "spent",
+            "cost to date",
+        ],
         "earned_value": ["earned_value", "ev", "bcwp"],
         "planned_value": ["planned_value", "pv", "bcws"],
         "is_milestone": ["is_milestone", "milestone_flag", "milestone", "phase/milestone", "milestone_?"],

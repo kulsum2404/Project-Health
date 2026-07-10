@@ -102,6 +102,11 @@ class WeeklySnapshot(SQLModel, table=True):
     # LLM-generated reasoning
     reasoning: str = ""
 
+    # Discrepancy tracking
+    self_reported_status: Optional[str] = None
+    discrepancy_flag: bool = False
+    discrepancy_reason: Optional[str] = None
+
     # Per-signal one-liner summaries (generated alongside reasoning)
     signal_summaries: dict[str, str] = SQLField(
         default_factory=dict, sa_column=Column(JSON)
@@ -183,6 +188,8 @@ class RagResult(BaseModel):
         default_factory=list,
         description="Reasons for threshold overrides (e.g. critical blocker)",
     )
+    self_reported_status: Optional[str] = None
+    discrepancy_flag: bool = False
 
 
 # ── API Response Models ──────────────────────────────────────────────────
@@ -245,6 +252,9 @@ class SnapshotResponse(BaseModel):
     signals_used: list[str]
     signals_skipped: list[str]
     reasoning: str
+    self_reported_status: Optional[str] = None
+    discrepancy_flag: bool = False
+    discrepancy_reason: Optional[str] = None
     signal_summaries: dict[str, str] = {}
     feedback_score: Optional[int] = 0
     source_file: str = ""

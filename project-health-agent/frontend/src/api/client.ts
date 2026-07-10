@@ -30,6 +30,9 @@ export interface Snapshot {
   source_file: string
   sheet_count: number
   total_tasks: number
+  self_reported_status: string | null
+  discrepancy_flag: boolean
+  discrepancy_reason: string | null
 }
 
 export interface Project {

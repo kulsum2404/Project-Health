@@ -38,7 +38,10 @@ def _find_column(df: pd.DataFrame, mapping: dict[str, str], candidates: list[str
         if df.empty:
             return True
         fill_count = df[col_name].notna().sum()
-        return fill_count >= 3 or (fill_count / len(df)) > 0.1
+        if fill_count == 0:
+            logger.warning(f"Milestones signal: mapped column '{col_name}' is 100% empty. Skipping and trying next synonym.")
+            return False
+        return fill_count >= 1 or (fill_count / len(df)) > 0.051
 
     mapped_but_empty = None
 

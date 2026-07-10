@@ -27,10 +27,11 @@ You will receive a JSON object containing:
 - Any override reasons that forced the status
 - The weights used for each signal
 
-Your job is to return a valid JSON object with two fields:
+Your job is to return a valid JSON object with the following fields:
 
 {
   "executive_summary": "...",
+  "discrepancy_reason": "...",
   "signal_summaries": {
     "schedule": "...",
     "budget": "...",
@@ -39,6 +40,10 @@ Your job is to return a valid JSON object with two fields:
     "sentiment": "..."
   }
 }
+
+RULES FOR discrepancy_reason:
+- If the input JSON has `discrepancy_flag = true`, you MUST provide a one-sentence explanation of why the self-reported status differs from our computed RAG status, grounded in the specific signals driving the gap (e.g. "Self-reported: Green. Computed: Red. Driven by 13 critical-path tasks stalled beyond baseline that aren't reflected in the summary status.")
+- If `discrepancy_flag = false`, return an empty string or null.
 
 RULES FOR executive_summary:
 - Provide a highly detailed, comprehensive executive summary.
@@ -171,6 +176,9 @@ async def generate_reasoning_and_summaries(
 
         executive_summary = raw.get("executive_summary", "")
         signal_summaries = raw.get("signal_summaries", {})
+        
+        if rag_result.discrepancy_flag:
+            rag_result.discrepancy_reason = raw.get("discrepancy_reason", "")
 
         logger.info(
             "Generated reasoning+summaries for %s: summary=%d chars, signals=%s",
@@ -262,6 +270,8 @@ def _build_reasoning_input(rag_result: RagResult, project_name: str) -> dict:
         "rag_status": rag_result.status.value,
         "weighted_score": rag_result.weighted_score,
         "confidence": rag_result.confidence,
+        "self_reported_status": rag_result.self_reported_status,
+        "discrepancy_flag": rag_result.discrepancy_flag,
         "signals_used": rag_result.signals_used,
         "signals_skipped": rag_result.signals_skipped,
         "signal_data": signal_data,

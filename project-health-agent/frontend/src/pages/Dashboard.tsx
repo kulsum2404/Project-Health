@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react"
 import { Link } from "react-router-dom"
-import { Activity, LayoutDashboard, PlusCircle } from "lucide-react"
+import { Activity, LayoutDashboard, PlusCircle, Search, X as XIcon } from "lucide-react"
 import { api, type Project } from "@/api/client"
 import { RagCard } from "@/components/RagCard"
 import { UploadDialog } from "@/components/UploadDialog"
@@ -8,6 +8,7 @@ import { MonthlyReportButton } from "@/components/MonthlyReportButton"
 import type { Variants } from "framer-motion"
 import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { PortfolioComparisonChart } from "@/components/PortfolioComparisonChart"
 import type { Snapshot } from "@/api/client"
 
@@ -41,7 +42,8 @@ export function Dashboard() {
   const [error, setError] = useState<string | null>(null)
   const [showSplash, setShowSplash] = useState(true)
   const [splashText, setSplashText] = useState("Loading Workspace...")
-
+  const [activeFilter, setActiveFilter] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState("")
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
 
   useEffect(() => {
@@ -99,6 +101,16 @@ export function Dashboard() {
   const green = analyzed.filter(p => p.latest_rag_status === "green").length
   const amber = analyzed.filter(p => p.latest_rag_status === "amber").length
   const red = analyzed.filter(p => p.latest_rag_status === "red").length
+
+  const filteredProjects = projects.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchesFilter = activeFilter === null || p.latest_rag_status === activeFilter
+    return matchesSearch && matchesFilter
+  })
+
+  const handleStatFilter = (status: string | null) => {
+    setActiveFilter(prev => prev === status ? null : status)
+  }
 
   return (
     <motion.div 
@@ -234,13 +246,61 @@ export function Dashboard() {
         variants={containerVariants}
         initial="hidden"
         animate="visible"
-        className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-12"
+        className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6"
       >
         <StatCard title="Total Projects" value={total} icon={<Activity className="w-5 h-5" />} />
-        <StatCard title="Green Status" value={green} color="text-rag-green" bg="bg-rag-green/10" border="border-rag-green/20" glow="shadow-[0_0_15px_rgba(16,185,129,0.1)]" />
-        <StatCard title="Amber Status" value={amber} color="text-rag-amber" bg="bg-rag-amber/10" border="border-rag-amber/20" glow="shadow-[0_0_15px_rgba(245,158,11,0.1)]" />
-        <StatCard title="Red Status" value={red} color="text-rag-red" bg="bg-rag-red/10" border="border-rag-red/20" glow="shadow-[0_0_15px_rgba(244,63,94,0.1)]" />
+        <StatCard title="Green Status" value={green} color="text-rag-green" bg="bg-rag-green/10" border="border-rag-green/20" glow="shadow-[0_0_15px_rgba(16,185,129,0.1)]" active={activeFilter === "green"} onClick={() => handleStatFilter("green")} />
+        <StatCard title="Amber Status" value={amber} color="text-rag-amber" bg="bg-rag-amber/10" border="border-rag-amber/20" glow="shadow-[0_0_15px_rgba(245,158,11,0.1)]" active={activeFilter === "amber"} onClick={() => handleStatFilter("amber")} />
+        <StatCard title="Red Status" value={red} color="text-rag-red" bg="bg-rag-red/10" border="border-rag-red/20" glow="shadow-[0_0_15px_rgba(244,63,94,0.1)]" active={activeFilter === "red"} onClick={() => handleStatFilter("red")} />
       </motion.div>
+
+      {/* Search + Active Filter Bar */}
+      {projects.length > 0 && !isLoading && !error && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.2 }}
+          className="flex items-center gap-3 mb-8"
+        >
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search projects..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="pl-9 bg-card/40 border-white/10 focus:border-primary/50 backdrop-blur-xl"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                <XIcon className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          {activeFilter && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="flex items-center gap-2"
+            >
+              <span className="text-xs text-muted-foreground">Filtered by:</span>
+              <button
+                onClick={() => setActiveFilter(null)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border capitalize ${
+                  activeFilter === "green" ? "bg-rag-green/15 border-rag-green/30 text-rag-green" :
+                  activeFilter === "amber" ? "bg-rag-amber/15 border-rag-amber/30 text-rag-amber" :
+                  "bg-rag-red/15 border-rag-red/30 text-rag-red"
+                }`}
+              >
+                {activeFilter} <XIcon className="w-3 h-3" />
+              </button>
+            </motion.div>
+          )}
+          <span className="text-xs text-muted-foreground ml-auto">
+            {filteredProjects.length} of {total} projects
+          </span>
+        </motion.div>
+      )}
 
       {!isLoading && !error && projects.length > 0 && (
         <motion.div variants={itemVariants} initial="hidden" animate="visible">
@@ -292,39 +352,64 @@ export function Dashboard() {
           </div>
         </motion.div>
       ) : (
-        <motion.div 
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-          className="grid grid-cols-1 md:grid-cols-2 gap-8"
-        >
-          {projects.map(project => (
-            <motion.div key={project.id} variants={itemVariants}>
-              <Link to={`/projects/${project.id}`} className="block h-full group/link">
-                <RagCard project={project} onUpdate={fetchProjects} />
-              </Link>
-            </motion.div>
-          ))}
-        </motion.div>
+        <>
+          <AnimatePresence>
+            {filteredProjects.length === 0 ? (
+              <motion.div
+                key="no-results"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0 }}
+                className="flex flex-col items-center justify-center p-16 text-center border rounded-2xl bg-card/40 backdrop-blur-xl border-dashed border-white/10 shadow-xl"
+              >
+                <Search className="w-10 h-10 text-muted-foreground/40 mb-4" />
+                <h3 className="text-xl font-bold text-muted-foreground">No projects match your filter</h3>
+                <p className="text-sm text-muted-foreground/60 mt-2">Try a different search or clear the filter.</p>
+                <Button variant="ghost" size="sm" className="mt-4" onClick={() => { setSearchQuery(""); setActiveFilter(null) }}>Clear filters</Button>
+              </motion.div>
+            ) : (
+              <motion.div 
+                key="grid"
+                variants={containerVariants}
+                initial="hidden"
+                animate="visible"
+                className="grid grid-cols-1 md:grid-cols-2 gap-8"
+              >
+                {filteredProjects.map(project => (
+                  <motion.div key={project.id} variants={itemVariants} layout>
+                    <Link to={`/projects/${project.id}`} className="block h-full group/link">
+                      <RagCard project={project} onUpdate={fetchProjects} />
+                    </Link>
+                  </motion.div>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </>
       )}
     </motion.div>
   )
 }
 
-function StatCard({ title, value, color = "text-foreground", bg = "bg-primary/10", border = "border-white/5", glow = "", icon }: { title: string, value: number, color?: string, bg?: string, border?: string, glow?: string, icon?: React.ReactNode }) {
+function StatCard({ title, value, color = "text-foreground", bg = "bg-primary/10", border = "border-white/5", glow = "", icon, active = false, onClick }: { title: string, value: number, color?: string, bg?: string, border?: string, glow?: string, icon?: React.ReactNode, active?: boolean, onClick?: () => void }) {
   return (
     <motion.div 
       variants={itemVariants}
-      whileHover={{ y: -5, scale: 1.02 }}
-      className={`bg-card/40 backdrop-blur-xl border ${border} rounded-2xl p-6 flex items-center gap-5 ${glow} transition-all duration-300`}
+      whileHover={{ y: -5, scale: 1.03 }}
+      whileTap={{ scale: 0.97 }}
+      onClick={onClick}
+      className={`bg-card/40 backdrop-blur-xl border ${active ? border.replace('border-', 'border-2 border-') : border} rounded-2xl p-6 flex items-center gap-5 ${glow} transition-all duration-300 ${onClick ? 'cursor-pointer' : ''} ${active ? 'ring-1 ring-current/20' : ''}`}
     >
-      <div className={`p-4 rounded-xl ${bg} ${color} shadow-inner`}>
+      <div className={`p-4 rounded-xl ${bg} ${color} shadow-inner transition-transform duration-300 ${active ? 'scale-110' : ''}`}>
         {icon || <span className="font-black text-2xl leading-none">{value}</span>}
       </div>
       <div>
         <p className="text-sm text-muted-foreground font-semibold uppercase tracking-wider">{title}</p>
         {icon && <h3 className={`text-3xl font-black mt-1 ${color} drop-shadow-sm`}>{value}</h3>}
+        {!icon && active && <p className="text-xs text-muted-foreground mt-0.5">Click to clear</p>}
+        {!icon && !active && onClick && <p className="text-xs text-muted-foreground mt-0.5">Click to filter</p>}
       </div>
+      {active && <div className={`ml-auto w-2 h-2 rounded-full ${bg.replace('/10', '')} animate-pulse`} />}
     </motion.div>
   )
 }

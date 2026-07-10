@@ -227,6 +227,9 @@ async def get_all_projects_history(
                 reasoning=s.reasoning,
                 signal_summaries=s.signal_summaries,
                 feedback_score=s.feedback_score,
+                self_reported_status=s.self_reported_status,
+                discrepancy_flag=s.discrepancy_flag,
+                discrepancy_reason=s.discrepancy_reason,
             )
             for s in snapshots
         ]
@@ -362,7 +365,11 @@ async def analyze_project(
     signals = [schedule_signal, budget_signal, milestone_signal, blocker_signal, sentiment_signal]
 
     # ── Classify RAG ───────────────────────────────────────────────────
-    rag_result = classify_rag(signals, project.custom_weights)
+    rag_result = classify_rag(
+        signals, 
+        project.custom_weights, 
+        self_reported_status=project_data.self_reported_status
+    )
 
     # ── Generate LLM reasoning + per-signal summaries (single call) ───
     try:
@@ -400,6 +407,8 @@ async def analyze_project(
         signals_skipped=rag_result.signals_skipped,
         reasoning=reasoning,
         signal_summaries=signal_summaries,
+        self_reported_status=rag_result.self_reported_status,
+        discrepancy_flag=rag_result.discrepancy_flag,
     )
 
     session.add(snapshot)
@@ -440,6 +449,9 @@ async def analyze_project(
         source_file=source_file,
         sheet_count=sheet_count,
         total_tasks=total_tasks,
+        self_reported_status=snapshot.self_reported_status,
+        discrepancy_flag=snapshot.discrepancy_flag,
+        discrepancy_reason=snapshot.discrepancy_reason,
     )
 
 

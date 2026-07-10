@@ -40,6 +40,10 @@ class ProjectData(BaseModel):
     all_data_json: str = ""       # JSON-serialized combined DataFrame
     columns: list[str] = Field(default_factory=list)
     sample_rows: list[dict[str, Any]] = Field(default_factory=list)
+    manager_name: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    self_reported_status: str | None = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -175,6 +179,30 @@ def load_xlsx(file_path: str | Path) -> ProjectData:
     if not all_dfs:
         raise ValueError("No valid data sheets found in the Excel file")
 
+    # ── Parse "Summary" sheet if available ───────────────────────────────
+    manager_name = None
+    start_date = None
+    end_date = None
+    self_reported_status = None
+
+    for sdf in all_dfs:
+        if str(sdf["_sheet"].iloc[0]).lower().strip() == "summary":
+            # Attempt to read as a 2-column key-value store
+            if len(sdf.columns) >= 2:
+                for idx, row in sdf.iterrows():
+                    key = str(row.iloc[0]).lower().strip()
+                    val = row.iloc[1]
+                    if pd.notna(val):
+                        if "project manager" in key:
+                            manager_name = str(val).strip()
+                        elif "start date" in key and "target" not in key and "baseline" not in key:
+                            start_date = str(val).strip()
+                        elif "end date" in key and "target" not in key and "baseline" not in key:
+                            end_date = str(val).strip()
+                        elif "schedule health" in key or "rag" in key or "status" == key:
+                            self_reported_status = str(val).strip()
+            break
+
     # ── Pick the best "tasks" sheet ──────────────────────────────────
     # Heuristic: use the sheet with the most rows that has task-like columns
     TASK_INDICATOR_COLUMNS = {
@@ -227,6 +255,10 @@ def load_xlsx(file_path: str | Path) -> ProjectData:
         all_data_json=combined_df.to_json(orient="records", date_format="iso", default_handler=str),
         columns=list(combined_df.columns),
         sample_rows=sample_rows,
+        manager_name=manager_name,
+        start_date=start_date,
+        end_date=end_date,
+        self_reported_status=self_reported_status,
     )
 
 

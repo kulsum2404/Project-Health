@@ -21,21 +21,71 @@ SIGNAL_NAME = "budget"
 DEFAULT_WEIGHT = 0.20
 
 COLUMN_CANDIDATES = {
-    "planned_budget": ["planned_budget", "budget", "baseline_cost", "planned_cost", "estimated_cost"],
-    "actual_cost": ["actual_cost", "actual_spend", "spend", "cost_to_date", "incurred_cost"],
-    "earned_value": ["earned_value", "ev", "value_earned"],
-    "planned_value": ["planned_value", "pv", "budgeted_cost_of_work_scheduled", "bcws"],
-    "pct_complete": ["pct_complete", "percent_complete", "%_complete", "completion", "progress", "% Complete"],
+    "planned_budget": [
+        # Schema mapper canonical names
+        "planned_budget", "planned_value",
+        # Common Excel names
+        "budget", "baseline_cost", "planned_cost", "estimated_cost",
+        "cost", "total_cost", "amount", "fixed_cost",
+        "bac", "budget_at_completion", "total_budget",
+        # MS Project exports
+        "Baseline Cost", "Fixed Cost", "Budget Cost", "Cost",
+        "Budget", "BAC", "Budget At Completion",
+    ],
+    "actual_cost": [
+        # Schema mapper canonical names
+        "actual_cost",
+        # Common Excel names
+        "actual_spend", "spend", "cost_to_date", "incurred_cost", "actuals",
+        "actual_expenditure", "expenditure", "actual",
+        # MS Project exports
+        "Actual Cost", "ACWP", "Actual", "Spent", "Cost to Date",
+    ],
+    "earned_value": [
+        "earned_value", "ev", "bcwp",
+        "Earned Value", "EV", "BCWP",
+    ],
+    "planned_value": [
+        "planned_value", "pv", "bcws",
+        "Planned Value", "PV", "BCWS",
+    ],
+    "pct_complete": [
+        "pct_complete", "percent_complete", "%_complete",
+        "completion", "progress", "% Complete", "% complete",
+        "complete", "pct complete", "percent complete",
+        "% Done", "pct_done",
+    ],
+    "eac": [
+        # Estimate at Completion — useful for deriving spend when no actual_cost
+        "eac", "estimate_at_completion", "Estimate At Completion",
+        "EAC", "forecast_cost",
+    ],
+    "etc": [
+        # Estimate to Complete
+        "etc", "estimate_to_complete", "remaining_cost",
+        "ETC", "Remaining Cost", "Estimate To Complete",
+    ],
 }
 
 
 def _find_column(df: pd.DataFrame, mapping: dict[str, str], candidates: list[str]) -> str | None:
     def is_usable(col_name: str) -> bool:
-        # Consider a column usable if it has at least 3 non-null values or >10% fill rate
         if df.empty:
             return True
-        fill_count = df[col_name].notna().sum()
-        return fill_count >= 3 or (fill_count / len(df)) > 0.1
+        col_data = df[col_name]
+        fill_count = col_data.notna().sum()
+        # First check: enough non-null values
+        if fill_count < 3 and (fill_count / len(df)) <= 0.1:
+            if fill_count == 0:
+                logger.warning(f"Budget signal: mapped column '{col_name}' is 100% empty. Skipping and trying next synonym.")
+            return False
+        # Second check: at least some values are numeric (for budget fields)
+        numeric_count = pd.to_numeric(col_data, errors="coerce").notna().sum()
+        # Accept column if it has fill AND at least some numeric values, OR just has good fill rate
+        if numeric_count == 0 and fill_count < 3:
+            logger.warning(f"Budget signal: mapped column '{col_name}' has no numeric values. Skipping.")
+            return False
+        return numeric_count > 0 or fill_count >= 3
 
     mapped_but_empty = None
 
@@ -87,6 +137,8 @@ def compute_budget_signal(
     ev_col = _find_column(df, mapping, COLUMN_CANDIDATES["earned_value"])
     pv_col = _find_column(df, mapping, COLUMN_CANDIDATES["planned_value"])
     pct_col = _find_column(df, mapping, COLUMN_CANDIDATES["pct_complete"])
+    eac_col = _find_column(df, mapping, COLUMN_CANDIDATES["eac"])
+    etc_col = _find_column(df, mapping, COLUMN_CANDIDATES["etc"])
 
     if df.empty:
         logger.warning("Budget signal: empty DataFrame — signal unavailable")
@@ -99,9 +151,9 @@ def compute_budget_signal(
             reason="No data rows found.",
         )
 
-    # We need at minimum budget and actual cost
-    if budget_col is None and actual_col is None:
-        logger.warning("Budget signal: no budget or actual cost columns — signal unavailable")
+    # We need at minimum budget OR actual cost OR EAC/ETC
+    if budget_col is None and actual_col is None and eac_col is None and etc_col is None:
+        logger.warning("Budget signal: no budget/cost columns found — signal unavailable")
         return SignalResult(
             name=SIGNAL_NAME,
             score=0,
@@ -124,6 +176,20 @@ def compute_budget_signal(
     if actual_col:
         actual_values = _safe_numeric(df[actual_col])
         total_actual = float(actual_values.sum())
+    elif eac_col and budget_col:
+        # If EAC (Estimate at Completion) is available, actual ≈ EAC - ETC
+        eac_values = _safe_numeric(df[eac_col])
+        if etc_col:
+            etc_values = _safe_numeric(df[etc_col])
+            actual_values = (eac_values - etc_values.fillna(0)).clip(lower=0)
+        else:
+            actual_values = eac_values  # worst case: treat EAC as actual
+        total_actual = float(actual_values.sum())
+    elif etc_col and budget_col:
+        # actual ≈ budget - remaining
+        etc_values = _safe_numeric(df[etc_col])
+        budget_values = _safe_numeric(df[budget_col])
+        total_actual = float((budget_values - etc_values.fillna(0)).clip(lower=0).sum())
 
     # Earned Value: use explicit column or compute from budget × %complete
     if ev_col:
